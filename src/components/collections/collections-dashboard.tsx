@@ -1,0 +1,347 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2 } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Dialog from "@radix-ui/react-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { PlanGate } from "@/components/plan/plan-gate";
+import {
+  createCollectionAction,
+  deleteCollectionAction,
+  updateCollectionDetailsAction,
+} from "@/app/(app)/collections/actions";
+import type { Profile } from "@/lib/supabase/types";
+import { planGateMessage, PLAN_COLLECTION_LIMIT, canCreateCollection } from "@/lib/plan";
+
+export interface CollectionSummary {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  is_public: boolean;
+  item_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CollectionsDashboardProps {
+  profile: Profile;
+  collections: CollectionSummary[];
+}
+
+export function CollectionsDashboard({ profile, collections }: CollectionsDashboardProps) {
+  const router = useRouter();
+  const [isDialogOpen, setDialogOpen] = useState(false);
+  const [formTitle, setFormTitle] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const limit = PLAN_COLLECTION_LIMIT[profile.plan] ?? Infinity;
+  const canCreate = canCreateCollection(profile, collections.length);
+
+  function handleCreate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    if (!formTitle.trim()) {
+      setError("Please provide a title for your collection");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await createCollectionAction({
+          title: formTitle,
+          description: formDescription || null,
+        });
+        setFormTitle("");
+        setFormDescription("");
+        setDialogOpen(false);
+        router.refresh();
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("Unable to create collection");
+        }
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold">Your collections</h1>
+          <p className="text-sm text-slate-400">Craft, reorder, and publish the sets that define your taste.</p>
+        </div>
+        <Dialog.Root open={isDialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog.Trigger asChild>
+            <Button size="lg" disabled={!canCreate}>
+              <Plus size={18} />
+              New collection
+            </Button>
+          </Dialog.Trigger>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 space-y-6 rounded-3xl border border-slate-800/70 bg-slate-950/80 p-8 shadow-2xl focus:outline-none">
+              <Dialog.Title className="text-2xl font-semibold">Create a collection</Dialog.Title>
+              <Dialog.Description className="text-sm text-slate-400">
+                Title your next cinematic theme and optionally describe the vibe.
+              </Dialog.Description>
+              <form className="space-y-4" onSubmit={handleCreate}>
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-[0.24em] text-slate-500" htmlFor="collection-title">
+                    Title
+                  </label>
+                  <Input
+                    id="collection-title"
+                    value={formTitle}
+                    onChange={(event) => setFormTitle(event.target.value)}
+                    placeholder="Midnight Monologues"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-[0.24em] text-slate-500" htmlFor="collection-description">
+                    Description
+                  </label>
+                  <Textarea
+                    id="collection-description"
+                    value={formDescription}
+                    onChange={(event) => setFormDescription(event.target.value)}
+                    placeholder="A descent into the quiet tension of late-night conversations"
+                  />
+                </div>
+                {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+                <div className="flex justify-end gap-3">
+                  <Dialog.Close asChild>
+                    <Button variant="ghost">Cancel</Button>
+                  </Dialog.Close>
+                  <Button type="submit" disabled={pending}>
+                    {pending ? "Creating..." : "Create"}
+                  </Button>
+                </div>
+              </form>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+      </div>
+
+      {!canCreate && limit !== Infinity ? (
+        <PlanGate
+          title="You’ve reached the free tier limit"
+          message={planGateMessage(profile)}
+          ctaLabel="Upgrade coming Day 2"
+        />
+      ) : null}
+
+      <AnimatePresence mode="popLayout">
+        {collections.length === 0 ? (
+          <motion.div
+            key="empty"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.25 }}
+            className="rounded-3xl border border-dashed border-slate-700/60 bg-slate-900/40 p-12 text-center"
+          >
+            <Sparkles className="mx-auto mb-4 h-12 w-12 text-indigo-300" />
+            <h2 className="text-xl font-semibold text-slate-100">Start your first collection</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Give it a name, search TMDB for films, drag to reorder, and share once it feels perfect.
+            </p>
+            <Button className="mt-6" onClick={() => setDialogOpen(true)}>
+              <Plus size={18} />
+              Create collection
+            </Button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="grid"
+            layout
+            className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {collections.map((collection) => (
+              <CollectionCard
+                key={collection.id}
+                collection={collection}
+                profile={profile}
+                onUpdated={() => router.refresh()}
+                onDeleted={() => router.refresh()}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+interface CollectionCardProps {
+  collection: CollectionSummary;
+  profile: Profile;
+  onUpdated: () => void;
+  onDeleted: () => void;
+}
+
+function CollectionCard({ collection, profile, onUpdated, onDeleted }: CollectionCardProps) {
+  const router = useRouter();
+  const [isRenaming, setRenaming] = useState(false);
+  const [title, setTitle] = useState(collection.title);
+  const [description, setDescription] = useState(collection.description ?? "");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handleUpdate(payload: { title?: string; description?: string; is_public?: boolean }) {
+    startTransition(async () => {
+      setError(null);
+      try {
+        await updateCollectionDetailsAction({
+          collectionId: collection.id,
+          title: payload.title,
+          description: payload.description,
+          isPublic: payload.is_public,
+        });
+        setRenaming(false);
+        onUpdated();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Update failed");
+      }
+    });
+  }
+
+  function handleDelete() {
+    startTransition(async () => {
+      try {
+        await deleteCollectionAction(collection.id);
+        onDeleted();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to delete");
+      }
+    });
+  }
+
+  return (
+    <motion.article
+      layout
+      className="flex h-full flex-col justify-between rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.9)]"
+    >
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            {isRenaming ? (
+              <div className="space-y-2">
+                <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+                <Textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  rows={3}
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-slate-100">{collection.title}</h2>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{collection.item_count} titles</p>
+                {collection.description ? (
+                  <p className="text-sm text-slate-400">{collection.description}</p>
+                ) : null}
+              </div>
+            )}
+          </div>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button variant="ghost" size="icon">
+                <Ellipsis size={18} />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content className="z-50 min-w-[180px] rounded-xl border border-slate-800/70 bg-slate-900/90 p-2 text-sm text-slate-100 shadow-xl">
+                <DropdownMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                  onSelect={() => router.push(`/collections/${collection.id}`)}
+                >
+                  <Sparkles size={16} />
+                  Open editor
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                  onSelect={() => {
+                    const origin = typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+                    void navigator.clipboard.writeText(`${origin}/c/${profile.username}/${collection.slug}`);
+                  }}
+                >
+                  <Eye size={16} />
+                  Copy public link
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                  onSelect={() => {
+                    setRenaming((prev) => !prev);
+                    setError(null);
+                  }}
+                >
+                  <PencilLine size={16} />
+                  Rename
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                  onSelect={() =>
+                    handleUpdate({ is_public: !collection.is_public })
+                  }
+                >
+                  {collection.is_public ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {collection.is_public ? "Make private" : "Make public"}
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className="my-2 h-px bg-slate-800/70" />
+                <DropdownMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-rose-400 hover:bg-rose-500/10"
+                  onSelect={handleDelete}
+                >
+                  <Trash2 size={16} />
+                  Delete
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+      </div>
+
+      {isRenaming ? (
+        <div className="mt-4 flex gap-3 text-sm">
+          <Button
+            variant="muted"
+            onClick={() => {
+              setRenaming(false);
+              setTitle(collection.title);
+              setDescription(collection.description ?? "");
+              setError(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() =>
+              handleUpdate({ title, description })
+            }
+            disabled={pending}
+          >
+            {pending ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
+          <span>{collection.is_public ? "Public" : "Private"}</span>
+          <span>{new Date(collection.updated_at).toLocaleDateString()}</span>
+        </div>
+      )}
+
+      {error ? <p className="mt-4 text-sm text-rose-400">{error}</p> : null}
+    </motion.article>
+  );
+}
