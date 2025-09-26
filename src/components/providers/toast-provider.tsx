@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Lightweight toast system built on Radix primitives. Manages a queue of
+ * notifications and exposes a simple hook.
+ */
+
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import {
   Toast,
@@ -11,8 +16,14 @@ import {
   type ToastVariant,
 } from "@/components/ui/toast";
 
+/**
+ * Default time (ms) before a toast automatically dismisses.
+ */
 const DEFAULT_DURATION = 3000;
 
+/**
+ * Options accepted when showing a toast notification.
+ */
 interface ToastOptions {
   id?: string;
   title?: string;
@@ -21,6 +32,9 @@ interface ToastOptions {
   duration?: number;
 }
 
+/**
+ * Internal toast representation tracked in state.
+ */
 interface ToastRecord {
   id: string;
   title?: string;
@@ -30,6 +44,9 @@ interface ToastRecord {
   open: boolean;
 }
 
+/**
+ * Context value exposed to components via the `useToast` hook.
+ */
 interface ToastContextValue {
   toast: (options: ToastOptions) => string;
   dismiss: (id: string) => void;
@@ -37,6 +54,9 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+/**
+ * Generates a stable unique identifier for toasts. Uses `crypto.randomUUID` when available.
+ */
 function generateId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -44,6 +64,9 @@ function generateId() {
   return `toast-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+/**
+ * Provides toast state management and renders the Radix toast primitives.
+ */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
 
@@ -76,6 +99,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         open: true,
       };
 
+      // Replace any existing toast with the same id and trim the queue to keep
+      // the viewport manageable on small screens.
       const filtered = current.filter((item) => item.id !== id);
       return [...filtered, next].slice(-4);
     });
@@ -114,6 +139,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Hook for accessing the toast context, ensuring the provider is mounted.
+ */
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {

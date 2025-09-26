@@ -1,3 +1,8 @@
+/**
+ * Server component powering the profile settings page. Auth checks happen here
+ * so the client form can stay focused on presentation.
+ */
+
 import { redirect } from "next/navigation";
 import { ProfileSettingsForm } from "@/components/profile/profile-settings-form";
 import { getSupabaseServerClient } from "@/lib/supabase/server";

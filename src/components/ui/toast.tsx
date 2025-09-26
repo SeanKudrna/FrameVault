@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Thin wrappers around Radix toast primitives that align styling with the rest
+ * of the FrameVault UI.
+ */
+
 import * as ToastPrimitives from "@radix-ui/react-toast";
 import type {
   ToastCloseProps,
@@ -12,8 +17,14 @@ import { forwardRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Supported visual variants for toasts surfaced by the shared toast provider.
+ */
 type ToastVariant = "default" | "success" | "error" | "info";
 
+/**
+ * Maps toast variants to their associated color classes.
+ */
 const variantClasses: Record<ToastVariant, string> = {
   default: "border-slate-800/70 bg-slate-950/90 text-slate-100",
   success: "border-emerald-500/40 bg-emerald-500/15 text-emerald-100",
@@ -21,12 +32,21 @@ const variantClasses: Record<ToastVariant, string> = {
   info: "border-indigo-500/40 bg-indigo-500/15 text-indigo-100",
 };
 
+/**
+ * Re-exported Radix toast provider used at the application root.
+ */
 export const ToastProvider = ToastPrimitives.Provider;
 
+/**
+ * Props accepted by the `Toast` component, extending Radix's primitives with a variant prop.
+ */
 export interface ToastProps extends ToastPrimitiveProps {
   variant?: ToastVariant;
 }
 
+/**
+ * Styled toast container that applies variant-specific colors and animations.
+ */
 export const Toast = forwardRef<React.ElementRef<typeof ToastPrimitives.Root>, ToastProps>(
   ({ className, variant = "default", ...props }, ref) => (
     <ToastPrimitives.Root
@@ -44,6 +64,9 @@ export const Toast = forwardRef<React.ElementRef<typeof ToastPrimitives.Root>, T
 );
 Toast.displayName = ToastPrimitives.Root.displayName;
 
+/**
+ * Bold title text rendered within a toast notification.
+ */
 export const ToastTitle = forwardRef<React.ElementRef<typeof ToastPrimitives.Title>, ToastTitleProps>(
   ({ className, ...props }, ref) => (
     <ToastPrimitives.Title ref={ref} className={cn("text-sm font-semibold", className)} {...props} />
@@ -51,6 +74,9 @@ export const ToastTitle = forwardRef<React.ElementRef<typeof ToastPrimitives.Tit
 );
 ToastTitle.displayName = ToastPrimitives.Title.displayName;
 
+/**
+ * Supplemental description copy that appears beneath a toast title.
+ */
 export const ToastDescription = forwardRef<
   React.ElementRef<typeof ToastPrimitives.Description>,
   ToastDescriptionProps
@@ -59,6 +85,9 @@ export const ToastDescription = forwardRef<
 ));
 ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
+/**
+ * Close button rendered in the top-right corner of each toast.
+ */
 export const ToastClose = forwardRef<React.ElementRef<typeof ToastPrimitives.Close>, ToastCloseProps>(
   ({ className, ...props }, ref) => (
     <ToastPrimitives.Close
@@ -76,6 +105,9 @@ export const ToastClose = forwardRef<React.ElementRef<typeof ToastPrimitives.Clo
 );
 ToastClose.displayName = ToastPrimitives.Close.displayName;
 
+/**
+ * Container that positions toasts near the bottom of the viewport.
+ */
 export const ToastViewport = forwardRef<React.ElementRef<typeof ToastPrimitives.Viewport>, ToastViewportProps>(
   ({ className, ...props }, ref) => (
     <ToastPrimitives.Viewport

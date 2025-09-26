@@ -1,3 +1,8 @@
+/**
+ * Main sign-in page. Auth checks run on the server to keep the client form free
+ * of conditional rendering.
+ */
+
 import { redirect } from "next/navigation";
 import { SignInForm } from "@/components/auth/sign-in-form";
 import { getSupabaseServerClient } from "@/lib/supabase/server";

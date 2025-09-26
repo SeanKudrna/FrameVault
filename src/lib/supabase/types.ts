@@ -1,7 +1,17 @@
+/**
+ * Types generated from the Supabase schema. These interfaces power strong
+ * typing across server actions and React components by mirroring the structure
+ * of our Postgres tables. Regenerate the file whenever the database schema
+ * changes to keep TypeScript accurate.
+ */
 export type Plan = "free" | "plus" | "pro";
 
 export type WatchStatus = "watched" | "watching" | "want";
 
+/**
+ * Root database contract consumed by the Supabase client helpers. The nested
+ * structure matches the format expected by `@supabase/supabase-js`.
+ */
 export interface Database {
   public: {
     Tables: {

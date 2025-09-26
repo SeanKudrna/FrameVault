@@ -1,8 +1,13 @@
+/**
+ * Authenticated dashboard route showing the user's collections and create
+ * controls. All reads happen on the server so the dashboard can stream data
+ * immediately after authentication.
+ */
+
 import { redirect } from "next/navigation";
 import { CollectionsDashboard } from "@/components/collections/collections-dashboard";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
-
 export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -36,6 +41,9 @@ export default async function DashboardPage() {
     throw collectionsError;
   }
 
+  // Flatten the nested count aggregate to the shape expected by the dashboard
+  // component. We expose `item_count` rather than the raw relationship to keep
+  // the UI decoupled from Supabase response formats.
   const collections = (collectionsData ?? []).map((collection) => ({
     id: collection.id,
     title: collection.title,

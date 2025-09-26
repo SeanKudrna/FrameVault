@@ -1,3 +1,9 @@
+/**
+ * TMDB integration helpers. This module acts as the core of our proxy layer by
+ * handling requests to the TMDB API, caching responses in Supabase, and exposing
+ * a simplified `MovieSummary` structure to the rest of the app.
+ */
+
 import { getServerEnv } from "@/env";
 import { apiError } from "@/lib/api";
 import { enforceRateLimit, isRateLimitError } from "@/lib/rate-limit";
@@ -6,9 +12,20 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { Movie } from "@/lib/supabase/types";
 import { getClientIp } from "@/lib/request";
 
+/**
+ * Milliseconds in a week; used when determining whether cached movie metadata
+ * is still fresh enough to serve without contacting TMDB again.
+ */
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Server environment variables captured once to avoid repeated lookups.
+ */
 const env = getServerEnv();
 
+/**
+ * Lightweight representation of a TMDB movie that is safe to return to clients or store locally.
+ */
 export interface MovieSummary {
   tmdbId: number;
   title: string;
@@ -51,6 +68,9 @@ interface TMDBImagesResult {
   }>;
 }
 
+/**
+ * Internal error used for bubbling TMDB API failures with their status code intact.
+ */
 class TMDBError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -59,11 +79,17 @@ class TMDBError extends Error {
   }
 }
 
+/**
+ * Formats a TMDB image path into a fully qualified URL for the desired size.
+ */
 function buildImage(path: string | null | undefined, size: "w500" | "w780" | "w1280" = "w500") {
   if (!path) return null;
   return `${env.TMDB_IMAGE_BASE}/${size}${path}`;
 }
 
+/**
+ * Maps a TMDB API response into the simplified `MovieSummary` structure used by the app.
+ */
 function mapMovie(payload: TMDBMovieResult): MovieSummary {
   const releaseDate = payload.release_date ?? payload.first_air_date ?? null;
   const releaseYear = releaseDate ? parseInt(releaseDate.slice(0, 4), 10) : null;
@@ -83,6 +109,9 @@ function mapMovie(payload: TMDBMovieResult): MovieSummary {
   };
 }
 
+/**
+ * Converts a cached Supabase `movies` row back into the `MovieSummary` representation.
+ */
 function mapCachedMovie(row: Movie): MovieSummary {
   let fallbackPosterUrl: string | null = null;
   if (row.tmdb_json && typeof row.tmdb_json === "object" && "fallbackPosterUrl" in row.tmdb_json) {
@@ -108,10 +137,16 @@ function mapCachedMovie(row: Movie): MovieSummary {
   };
 }
 
+/**
+ * Normalises search strings for comparison by removing punctuation and lowercasing.
+ */
 function normalizeSearchValue(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Breaks a query into tokens for fuzzy matching against candidate titles.
+ */
 function tokenizeSearchValue(value: string) {
   return value
     .toLowerCase()
@@ -121,6 +156,13 @@ function tokenizeSearchValue(value: string) {
     .filter(Boolean);
 }
 
+/**
+ * Scores a TMDB search result using a blend of exact matches, token overlap,
+ * popularity, vote data, and release recency to improve ranking quality. Higher
+ * scores float to the top of the search results list. The weighting is tuned to
+ * favour exact or prefix matches first, then lean on popularity metrics when
+ * multiple films share similar names.
+ */
 function computeSearchScore(result: TMDBMovieResult, query: string) {
   const normalizedQuery = normalizeSearchValue(query);
   const queryTokens = tokenizeSearchValue(query);
@@ -185,6 +227,9 @@ function computeSearchScore(result: TMDBMovieResult, query: string) {
   return titleScore + popularityScore + voteAverageScore + voteCountScore + recencyScore;
 }
 
+/**
+ * Persists the provided movies in Supabase so future requests can serve cached metadata quickly.
+ */
 async function cacheMovies(movies: MovieSummary[], tmdbPayloads?: Record<number, unknown>) {
   if (!movies.length) return;
   const service = getSupabaseServiceRoleClient();
@@ -210,6 +255,9 @@ async function cacheMovies(movies: MovieSummary[], tmdbPayloads?: Record<number,
   if (error) throw error;
 }
 
+/**
+ * Performs an authenticated request against the TMDB API, throwing `TMDBError` on failure.
+ */
 async function tmdbFetch<T>(endpoint: string, params: Record<string, string | number | boolean | undefined> = {}) {
   const url = new URL(`${env.TMDB_API_BASE.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`);
   Object.entries(params).forEach(([key, value]) => {
@@ -233,6 +281,10 @@ async function tmdbFetch<T>(endpoint: string, params: Record<string, string | nu
   return (await response.json()) as T;
 }
 
+/**
+ * Handles `/api/tmdb/search` requests by validating input, enforcing rate limits, ranking
+ * TMDB results, caching them, and returning the serialised movie summaries.
+ */
 export async function handleSearch(request: Request) {
   const url = new URL(request.url);
   const query = url.searchParams.get("query")?.trim();
@@ -306,6 +358,10 @@ export async function handleSearch(request: Request) {
   }
 }
 
+/**
+ * Handles `/api/tmdb/movie` requests by serving cached metadata when fresh, otherwise fetching
+ * from TMDB, refreshing the cache, and returning the mapped summary.
+ */
 export async function handleMovie(request: Request) {
   const url = new URL(request.url);
   const idParam = url.searchParams.get("id");
@@ -396,6 +452,9 @@ export async function handleMovie(request: Request) {
   }
 }
 
+/**
+ * Attempts to find a higher-quality fallback poster for a TMDB movie, preferring English artwork.
+ */
 async function findBestPosterImage(movieId: number, currentPath: string | null) {
   try {
     const data = await tmdbFetch<TMDBImagesResult>(`movie/${movieId}/images`, {
