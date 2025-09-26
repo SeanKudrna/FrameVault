@@ -1,19 +1,27 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSupabase } from "@/components/providers/supabase-provider";
+import { useToast } from "@/components/providers/toast-provider";
 import type { Profile } from "@/lib/supabase/types";
 import { updateProfileAction } from "@/app/(app)/settings/actions";
 
 export function ProfileSettingsForm({ profile }: { profile: Profile }) {
   const { setProfile } = useSupabase();
+  const { toast } = useToast();
   const [username, setUsername] = useState(profile.username);
   const [displayName, setDisplayName] = useState(profile.display_name ?? "");
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [message]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -24,9 +32,17 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
       try {
         await updateProfileAction({ username, displayName });
         setProfile({ ...profile, username, display_name: displayName || null });
+        setError(null);
         setMessage("Profile updated");
+        toast({
+          title: "Profile saved",
+          description: "Your public profile is up to date.",
+          variant: "success",
+        });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to update profile");
+        const message = err instanceof Error ? err.message : "Unable to update profile";
+        setError(message);
+        toast({ title: "Unable to update profile", description: message, variant: "error" });
       }
     });
   }

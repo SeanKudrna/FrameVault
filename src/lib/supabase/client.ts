@@ -11,6 +11,7 @@ export function getSupabaseBrowserClient() {
   if (!client) {
     const { NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY } = getClientEnv();
     client = createBrowserClient<Database>(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    (client.auth as typeof client.auth & { suppressGetSessionWarning?: boolean }).suppressGetSessionWarning = true;
   }
   return client;
 }

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PlanGate } from "@/components/plan/plan-gate";
+import { useToast } from "@/components/providers/toast-provider";
 import {
   createCollectionAction,
   deleteCollectionAction,
@@ -36,6 +37,7 @@ interface CollectionsDashboardProps {
 
 export function CollectionsDashboard({ profile, collections }: CollectionsDashboardProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -48,27 +50,35 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (!formTitle.trim()) {
-      setError("Please provide a title for your collection");
+    const trimmedTitle = formTitle.trim();
+    const trimmedDescription = formDescription.trim();
+
+    if (!trimmedTitle) {
+      const message = "Please provide a title for your collection";
+      setError(message);
+      toast({ title: "Missing title", description: message, variant: "error" });
       return;
     }
 
     startTransition(async () => {
       try {
         await createCollectionAction({
-          title: formTitle,
-          description: formDescription || null,
+          title: trimmedTitle,
+          description: trimmedDescription ? trimmedDescription : null,
         });
         setFormTitle("");
         setFormDescription("");
         setDialogOpen(false);
+        toast({
+          title: "Collection created",
+          description: `"${trimmedTitle}" is ready to curate.`,
+          variant: "success",
+        });
         router.refresh();
       } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError("Unable to create collection");
-        }
+        const message = err instanceof Error ? err.message : "Unable to create collection";
+        setError(message);
+        toast({ title: "Unable to create collection", description: message, variant: "error" });
       }
     });
   }
@@ -192,37 +202,86 @@ interface CollectionCardProps {
 
 function CollectionCard({ collection, profile, onUpdated, onDeleted }: CollectionCardProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [isRenaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(collection.title);
   const [description, setDescription] = useState(collection.description ?? "");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  function shouldIgnoreActivation(target: HTMLElement) {
+    return Boolean(target.closest('[data-collection-card-ignore]'));
+  }
+
+  function navigateToEditor() {
+    router.push(`/collections/${collection.id}`);
+  }
+
+  function handleCardClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (shouldIgnoreActivation(event.target as HTMLElement)) return;
+    navigateToEditor();
+  }
+
+  function handleCardKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      if (shouldIgnoreActivation(event.target as HTMLElement)) return;
+      event.preventDefault();
+      navigateToEditor();
+    }
+  }
+
   function handleUpdate(payload: { title?: string; description?: string; is_public?: boolean }) {
+    const titleValue =
+      typeof payload.title === "string" ? payload.title.trim() || undefined : undefined;
+    const descriptionValueRaw =
+      payload.description === undefined ? undefined : payload.description.trim();
+    const descriptionValue =
+      descriptionValueRaw === undefined ? undefined : descriptionValueRaw || null;
+
     startTransition(async () => {
       setError(null);
       try {
         await updateCollectionDetailsAction({
           collectionId: collection.id,
-          title: payload.title,
-          description: payload.description,
+          title: titleValue,
+          description: descriptionValue,
           isPublic: payload.is_public,
         });
         setRenaming(false);
         onUpdated();
+
+        const successDescription = typeof payload.is_public === "boolean"
+          ? payload.is_public
+            ? "Collection is now public."
+            : "Collection is now private."
+          : titleValue
+          ? "Collection details saved."
+          : "Collection updated.";
+
+        toast({ title: "Collection updated", description: successDescription, variant: "success" });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Update failed");
+        const message = err instanceof Error ? err.message : "Update failed";
+        setError(message);
+        toast({ title: "Update failed", description: message, variant: "error" });
       }
     });
   }
 
   function handleDelete() {
+    setError(null);
     startTransition(async () => {
       try {
         await deleteCollectionAction(collection.id);
-        onDeleted();
+      onDeleted();
+      toast({
+        title: "Collection deleted",
+        description: `"${collection.title}" has been removed.`,
+        variant: "success",
+        });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to delete");
+        const message = err instanceof Error ? err.message : "Unable to delete";
+        setError(message);
+        toast({ title: "Unable to delete", description: message, variant: "error" });
       }
     });
   }
@@ -230,18 +289,27 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
   return (
     <motion.article
       layout
-      className="flex h-full flex-col justify-between rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.9)]"
+      className="group flex h-full cursor-pointer flex-col justify-between rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.9)]"
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
     >
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             {isRenaming ? (
               <div className="space-y-2">
-                <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+                <Input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  data-collection-card-ignore
+                />
                 <Textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   rows={3}
+                  data-collection-card-ignore
                 />
               </div>
             ) : (
@@ -256,7 +324,14 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
           </div>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button
+                variant="ghost"
+                size="icon"
+                data-collection-card-ignore
+                className="h-10 w-10 rounded-xl border border-transparent bg-transparent text-slate-400 transition-colors focus-visible:border-indigo-400/60 focus-visible:bg-slate-900/70 hover:border-indigo-400/60 hover:bg-slate-900/70 data-[state=open]:border-indigo-400/60 data-[state=open]:bg-slate-900/70"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
                 <Ellipsis size={18} />
               </Button>
             </DropdownMenu.Trigger>
@@ -264,16 +339,48 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
               <DropdownMenu.Content className="z-50 min-w-[180px] rounded-xl border border-slate-800/70 bg-slate-900/90 p-2 text-sm text-slate-100 shadow-xl">
                 <DropdownMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={() => router.push(`/collections/${collection.id}`)}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    router.push(`/collections/${collection.id}`);
+                  }}
                 >
                   <Sparkles size={16} />
                   Open editor
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={() => {
-                    const origin = typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-                    void navigator.clipboard.writeText(`${origin}/c/${profile.username}/${collection.slug}`);
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    const origin =
+                      typeof window !== "undefined"
+                        ? window.location.origin
+                        : process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+                    const shareUrl = `${origin}/c/${profile.username}/${collection.slug}`;
+
+                    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                      navigator.clipboard
+                        .writeText(shareUrl)
+                        .then(() => {
+                          toast({
+                            title: "Link copied",
+                            description: "Your public collection link is ready to share.",
+                            variant: "success",
+                          });
+                        })
+                        .catch(() => {
+                          toast({
+                            title: "Copy failed",
+                            description: "Copy the link manually from the address bar.",
+                            variant: "error",
+                          });
+                        });
+                    } else {
+                      toast({
+                        title: "Clipboard unavailable",
+                        description: "Copy the link manually from the address bar.",
+                        variant: "info",
+                      });
+                    }
                   }}
                 >
                   <Eye size={16} />
@@ -281,7 +388,8 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={() => {
+                  onSelect={(event) => {
+                    event.preventDefault();
                     setRenaming((prev) => !prev);
                     setError(null);
                   }}
@@ -291,9 +399,10 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={() =>
-                    handleUpdate({ is_public: !collection.is_public })
-                  }
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleUpdate({ is_public: !collection.is_public });
+                  }}
                 >
                   {collection.is_public ? <EyeOff size={16} /> : <Eye size={16} />}
                   {collection.is_public ? "Make private" : "Make public"}
@@ -301,7 +410,10 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                 <DropdownMenu.Separator className="my-2 h-px bg-slate-800/70" />
                 <DropdownMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-rose-400 hover:bg-rose-500/10"
-                  onSelect={handleDelete}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleDelete();
+                  }}
                 >
                   <Trash2 size={16} />
                   Delete
@@ -313,28 +425,30 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
       </div>
 
       {isRenaming ? (
-        <div className="mt-4 flex gap-3 text-sm">
-          <Button
-            variant="muted"
-            onClick={() => {
-              setRenaming(false);
-              setTitle(collection.title);
-              setDescription(collection.description ?? "");
-              setError(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() =>
-              handleUpdate({ title, description })
-            }
-            disabled={pending}
-          >
-            {pending ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      ) : (
+    <div className="mt-4 flex gap-3 text-sm">
+      <Button
+        variant="muted"
+        data-collection-card-ignore
+        onClick={() => {
+          setRenaming(false);
+          setTitle(collection.title);
+          setDescription(collection.description ?? "");
+          setError(null);
+        }}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={() =>
+          handleUpdate({ title, description })
+        }
+        disabled={pending}
+        data-collection-card-ignore
+      >
+        {pending ? "Saving..." : "Save"}
+      </Button>
+    </div>
+  ) : (
         <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
           <span>{collection.is_public ? "Public" : "Private"}</span>
           <span>{new Date(collection.updated_at).toLocaleDateString()}</span>

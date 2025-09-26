@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { Session } from "@supabase/supabase-js";
 import { Inter, Playfair_Display } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { ensureProfile } from "@/lib/auth";
@@ -51,8 +52,9 @@ export default async function RootLayout({
     supabase.auth.getSession(),
   ]);
 
-  const session = sessionResponse.data.session ?? null;
-  const user = userResponse.data?.user ?? session?.user ?? null;
+  const rawSession = sessionResponse.data.session ?? null;
+  const user = userResponse.data?.user ?? null;
+  const session: Session | null = rawSession && user ? { ...rawSession, user } : null;
 
   let profile: Profile | null = null;
   if (user) {

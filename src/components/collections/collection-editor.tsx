@@ -1,7 +1,6 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -25,6 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MovieSearchModal } from "@/components/collections/movie-search-modal";
+import { useToast } from "@/components/providers/toast-provider";
+import { PosterImage } from "@/components/media/poster-image";
 import {
   addMovieToCollectionAction,
   removeCollectionItemAction,
@@ -35,6 +36,12 @@ import {
 import type { CollectionItemWithMovie } from "@/types/collection";
 import type { MovieSummary } from "@/lib/tmdb";
 import type { Profile } from "@/lib/supabase/types";
+
+const DND_INSTRUCTIONS_ID = "framevault-dnd-instructions";
+const DND_SCREEN_READER_INSTRUCTIONS = {
+  draggable:
+    "Press space bar to pick up an item. Use the arrow keys to move, space bar to drop, and escape to cancel.",
+} as const;
 
 interface CollectionEditorProps {
   collection: {
@@ -53,13 +60,14 @@ interface CollectionEditorProps {
 
 export function CollectionEditor({ collection, profile, items: initialItems }: CollectionEditorProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     })
   );
   const [items, setItems] = useState(() => initialItems);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [, setActiveId] = useState<string | null>(null);
   const dragOriginItemsRef = useRef<CollectionItemWithMovie[]>(initialItems);
   const [isSearchOpen, setSearchOpen] = useState(false);
   const [title, setTitle] = useState(collection.title);
@@ -80,21 +88,30 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
   }, [collection.id, collection.title, collection.description, collection.is_public]);
 
   const existingTmdbIds = useMemo(() => items.map((item) => item.tmdb_id), [items]);
-  const activeItem = useMemo(() => items.find((item) => item.id === activeId) ?? null, [items, activeId]);
-
-  const handleAddMovie = useCallback((movie: MovieSummary) => {
-    startTransition(async () => {
-      try {
-        await addMovieToCollectionAction({
-          collectionId: collection.id,
-          movie,
-        });
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to add movie");
-      }
-    });
-  }, [collection.id, router, startTransition]);
+  const handleAddMovie = useCallback(
+    (movie: MovieSummary) => {
+      startTransition(async () => {
+        try {
+          await addMovieToCollectionAction({
+            collectionId: collection.id,
+            movie,
+          });
+          setError(null);
+          toast({
+            title: "Movie added",
+            description: `${movie.title} joined "${collection.title}".`,
+            variant: "success",
+          });
+          router.refresh();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unable to add movie";
+          setError(message);
+          toast({ title: "Unable to add movie", description: message, variant: "error" });
+        }
+      });
+    },
+    [collection.id, collection.title, router, startTransition, toast]
+  );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     dragOriginItemsRef.current = items.map((item) => ({ ...item }));
@@ -112,94 +129,139 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
       setActiveId(null);
       if (!over || active.id === over.id) return;
 
-      setItems((currentItems) => {
-        const oldIndex = currentItems.findIndex((item) => item.id === active.id);
-        const newIndex = currentItems.findIndex((item) => item.id === over.id);
-        if (oldIndex === -1 || newIndex === -1) {
-          return currentItems;
+      const currentItems = items;
+      const oldIndex = currentItems.findIndex((item) => item.id === active.id);
+      const newIndex = currentItems.findIndex((item) => item.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) {
+        return;
+      }
+
+      const originSnapshot = dragOriginItemsRef.current.map((item) => ({ ...item }));
+      const reordered = arrayMove(currentItems, oldIndex, newIndex).map((item, index) => ({
+        ...item,
+        position: index,
+      }));
+
+      setItems(reordered);
+
+      startTransition(async () => {
+        try {
+          await reorderCollectionItemsAction({
+            collectionId: collection.id,
+            orderedIds: reordered.map((item) => ({ id: item.id, position: item.position })),
+          });
+          dragOriginItemsRef.current = reordered.map((item) => ({ ...item }));
+          setError(null);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Failed to reorder";
+          setError(message);
+          toast({ title: "Unable to reorder", description: message, variant: "error" });
+          setItems(originSnapshot);
+          dragOriginItemsRef.current = originSnapshot.map((item) => ({ ...item }));
         }
-
-        const reordered = arrayMove(currentItems, oldIndex, newIndex).map((item, index) => ({
-          ...item,
-          position: index,
-        }));
-
-        startTransition(async () => {
-          try {
-            await reorderCollectionItemsAction({
-              collectionId: collection.id,
-              orderedIds: reordered.map((item) => ({ id: item.id, position: item.position })),
-            });
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to reorder");
-            setItems(dragOriginItemsRef.current.map((item) => ({ ...item })));
-          }
-        });
-
-        return reordered;
       });
     },
-    [collection.id, startTransition]
+    [collection.id, items, startTransition, toast]
   );
 
   const handleSaveDetails = useCallback(() => {
+    const trimmedTitle = title.trim();
+    const trimmedDescription = description.trim();
+
     startTransition(async () => {
       try {
         await updateCollectionDetailsAction({
           collectionId: collection.id,
-          title,
-          description,
+          title: trimmedTitle || undefined,
+          description: trimmedDescription ? trimmedDescription : null,
         });
+        setError(null);
+        toast({ title: "Collection saved", description: "Details updated successfully.", variant: "success" });
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to save details");
+        const message = err instanceof Error ? err.message : "Unable to save details";
+        setError(message);
+        toast({ title: "Unable to save", description: message, variant: "error" });
       }
     });
-  }, [collection.id, description, router, startTransition, title]);
+  }, [collection.id, description, router, startTransition, title, toast]);
 
   const handleToggleVisibility = useCallback(() => {
+    const nextIsPublic = !isPublic;
     startTransition(async () => {
       try {
         await updateCollectionDetailsAction({
           collectionId: collection.id,
-          isPublic: !isPublic,
+          isPublic: nextIsPublic,
         });
-        setIsPublic((prev) => !prev);
+        setIsPublic(nextIsPublic);
+        setError(null);
+        toast({
+          title: nextIsPublic ? "Collection published" : "Collection hidden",
+          description: nextIsPublic
+            ? "Your collection is now visible to anyone with the link."
+            : "The collection is private again.",
+          variant: "success",
+        });
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to update visibility");
+        const message = err instanceof Error ? err.message : "Unable to update visibility";
+        setError(message);
+        toast({ title: "Update failed", description: message, variant: "error" });
       }
     });
-  }, [collection.id, isPublic, router, startTransition]);
+  }, [collection.id, isPublic, router, startTransition, toast]);
 
-  const handleRemoveItem = useCallback((itemId: string) => {
-    startTransition(async () => {
-      try {
-        await removeCollectionItemAction({
-          collectionItemId: itemId,
-          collectionId: collection.id,
-        });
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to remove");
-      }
-    });
-  }, [collection.id, router, startTransition]);
+  const handleRemoveItem = useCallback(
+    (item: CollectionItemWithMovie) => {
+      startTransition(async () => {
+        try {
+          await removeCollectionItemAction({
+            collectionItemId: item.id,
+            collectionId: collection.id,
+          });
+          setError(null);
+          toast({
+            title: "Removed from collection",
+            description: `${item.movie?.title ?? "Movie"} was removed.`,
+            variant: "success",
+          });
+          router.refresh();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unable to remove";
+          setError(message);
+          toast({ title: "Unable to remove", description: message, variant: "error" });
+        }
+      });
+    },
+    [collection.id, router, startTransition, toast]
+  );
 
-  const handleNoteSave = useCallback((itemId: string, note: string) => {
-    startTransition(async () => {
-      try {
-        await updateCollectionItemNoteAction({
-          collectionItemId: itemId,
-          note,
-          collectionId: collection.id,
-        });
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to save note");
-      }
-    });
-  }, [collection.id, router, startTransition]);
+  const handleNoteSave = useCallback(
+    (item: CollectionItemWithMovie, note: string) => {
+      startTransition(async () => {
+        try {
+          await updateCollectionItemNoteAction({
+            collectionItemId: item.id,
+            note,
+            collectionId: collection.id,
+          });
+          setError(null);
+          toast({
+            title: "Note saved",
+            description: `${item.movie?.title ?? "Movie"} note updated.`,
+            variant: "success",
+          });
+          router.refresh();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unable to save note";
+          setError(message);
+          toast({ title: "Unable to save note", description: message, variant: "error" });
+        }
+      });
+    },
+    [collection.id, router, startTransition, toast]
+  );
 
   const shareUrl = (typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000') + `/c/${profile.username}/${collection.slug}`;
 
@@ -228,7 +290,33 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
                 variant="ghost"
                 size="sm"
                 disabled={!isPublic}
-                onClick={() => navigator.clipboard.writeText(shareUrl)}
+                onClick={() => {
+                  if (!isPublic) return;
+                  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                    navigator.clipboard
+                      .writeText(shareUrl)
+                      .then(() =>
+                        toast({
+                          title: "Link copied",
+                          description: "Share URL copied to your clipboard.",
+                          variant: "success",
+                        })
+                      )
+                      .catch(() =>
+                        toast({
+                          title: "Copy failed",
+                          description: "Copy the link manually from the address bar.",
+                          variant: "error",
+                        })
+                      );
+                  } else {
+                    toast({
+                      title: "Clipboard unavailable",
+                      description: "Copy the link manually from the address bar.",
+                      variant: "info",
+                    });
+                  }
+                }}
               >
                 Copy
               </Button>
@@ -260,6 +348,10 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
           modifiers={[restrictToVerticalAxis]}
+          accessibility={{
+            describedById: DND_INSTRUCTIONS_ID,
+            screenReaderInstructions: DND_SCREEN_READER_INSTRUCTIONS,
+          }}
         >
           <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-4">
@@ -267,15 +359,13 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
                 <SortableMovieCard
                   key={item.id}
                   item={item}
-                  onRemove={() => handleRemoveItem(item.id)}
-                  onSaveNote={(note) => handleNoteSave(item.id, note)}
+                  onRemove={() => handleRemoveItem(item)}
+                  onSaveNote={(note) => handleNoteSave(item, note)}
                 />
               ))}
             </div>
           </SortableContext>
-          <DragOverlay dropAnimation={null}>
-            {activeItem ? <MovieCardOverlay item={activeItem} /> : null}
-          </DragOverlay>
+          <DragOverlay />
         </DndContext>
         {items.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-800/70 bg-slate-950/40 p-12 text-center text-sm text-slate-400">
@@ -367,7 +457,7 @@ function MovieCardBody({
     <div className="flex gap-4">
       {dragHandleProps ? (
         <button
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-slate-800/70 bg-slate-900/60 text-slate-500"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-slate-800/70 bg-slate-900/60 text-slate-500 transition hover:border-indigo-400/70 hover:bg-slate-900/80 hover:text-indigo-200 cursor-grab active:cursor-grabbing"
           {...dragHandleProps}
         >
           <GripVertical size={18} />
@@ -379,13 +469,13 @@ function MovieCardBody({
       )}
       <div className="flex w-full gap-4">
         <div className="relative h-28 w-20 overflow-hidden rounded-xl">
-          {item.movie?.posterUrl ? (
-            <Image src={item.movie.posterUrl} alt={item.movie.title} fill className="object-cover" />
-          ) : (
-            <div className="flex h-full items-center justify-center bg-slate-800/60 text-xs text-slate-500">
-              No art
-            </div>
-          )}
+          <PosterImage
+            src={item.movie?.posterUrl ?? null}
+            fallbackSrc={item.movie?.fallbackPosterUrl ?? null}
+            alt={item.movie?.title ?? "Poster"}
+            sizes="120px"
+            tmdbId={item.movie?.tmdbId ?? null}
+          />
         </div>
         <div className="flex-1 space-y-2">
           <div className="flex items-center justify-between gap-3">
@@ -421,14 +511,6 @@ function MovieCardBody({
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function MovieCardOverlay({ item }: { item: CollectionItemWithMovie }) {
-  return (
-    <div className="pointer-events-none flex flex-col gap-4 rounded-3xl border border-indigo-400/40 bg-slate-950/90 p-5 shadow-[0_16px_60px_-30px_rgba(79,70,229,0.5)]">
-      <MovieCardBody item={item} readOnly />
     </div>
   );
 }

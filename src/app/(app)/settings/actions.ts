@@ -32,7 +32,7 @@ export async function updateProfileAction(input: UpdateProfileInput) {
   const { data: conflicts, error: conflictError } = await supabase
     .from("profiles")
     .select("id")
-    .filter("lower(username)", "eq", usernameLower)
+    .ilike("username", usernameLower)
     .neq("id", user.id);
 
   if (conflictError) throw conflictError;

@@ -4,6 +4,8 @@ FrameVault is a Next.js 14 + Supabase app for curating cinematic collections wit
 
 ## Quick Start
 
+Requires Node.js 20.x or newer.
+
 1. **Install dependencies**
    ```bash
    npm install

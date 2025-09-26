@@ -1,12 +1,26 @@
+import type { Session } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { Profile } from "@/lib/supabase/types";
 
 export async function getSession() {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session ?? null;
+  const [sessionResult, userResult] = await Promise.all([
+    supabase.auth.getSession(),
+    supabase.auth.getUser(),
+  ]);
+
+  if (sessionResult.error) throw sessionResult.error;
+  if (userResult.error) throw userResult.error;
+
+  const session = sessionResult.data.session;
+  const user = userResult.data.user ?? null;
+
+  if (!session || !user) {
+    return null;
+  }
+
+  return { ...session, user } as Session;
 }
 
 export async function getAuthenticatedProfile() {

@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import type { Profile } from "@/lib/supabase/types";
 import { ReactQueryProvider } from "./react-query-provider";
 import { SupabaseProvider } from "./supabase-provider";
+import { ToastProvider } from "./toast-provider";
 
 interface AppProvidersProps {
   children: React.ReactNode;
@@ -18,9 +19,11 @@ export function AppProviders({
 }: AppProvidersProps) {
   return (
     <ReactQueryProvider>
-      <SupabaseProvider initialSession={initialSession} initialProfile={initialProfile}>
-        {children}
-      </SupabaseProvider>
+      <ToastProvider>
+        <SupabaseProvider initialSession={initialSession} initialProfile={initialProfile}>
+          {children}
+        </SupabaseProvider>
+      </ToastProvider>
     </ReactQueryProvider>
   );
 }

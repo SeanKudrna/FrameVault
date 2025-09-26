@@ -76,6 +76,10 @@ export default async function CollectionEditorPage({ params }: PageParams) {
         movie?.tmdb_json && typeof movie.tmdb_json === "object" && "vote_average" in movie.tmdb_json
           ? Number((movie.tmdb_json as Record<string, unknown>)["vote_average"])
           : null;
+      const fallbackPosterUrl =
+        movie?.tmdb_json && typeof movie.tmdb_json === "object" && "fallbackPosterUrl" in movie.tmdb_json
+          ? ((movie.tmdb_json as Record<string, unknown>)["fallbackPosterUrl"] as string | null)
+          : null;
 
       return {
         id: item.id,
@@ -92,6 +96,7 @@ export default async function CollectionEditorPage({ params }: PageParams) {
               releaseYear: movie.release_year ?? null,
               overview: (overview as string | null) ?? null,
               posterUrl: movie.poster_url ?? null,
+              fallbackPosterUrl,
               backdropUrl: movie.backdrop_url ?? null,
               genres: (movie.genres as { id: number; name: string }[] | null) ?? [],
               runtime: movie.runtime ?? null,

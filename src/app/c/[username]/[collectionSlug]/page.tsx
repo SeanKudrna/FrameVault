@@ -1,19 +1,62 @@
 
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import Image from "next/image";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getServerEnv } from "@/env";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Movie } from "@/lib/supabase/types";
+import type { Database, Movie } from "@/lib/supabase/types";
+import { PosterImage } from "@/components/media/poster-image";
 
 interface PageProps {
   params: Promise<{ username: string; collectionSlug: string }> | { username: string; collectionSlug: string };
   searchParams: { id?: string } | Promise<{ id?: string }>;
 }
 
-export default async function PublicCollectionPage({ params, searchParams }: PageProps) {
-  const { username, collectionSlug } = await params;
-  const query = await searchParams;
-  const supabase = await getSupabaseServerClient();
+interface PublicProfileRow {
+  id: string;
+  username: string;
+  display_name: string | null;
+}
 
+interface CollectionItemRow {
+  position: number;
+  note: string | null;
+  tmdb_id: number;
+}
+
+interface PublicCollectionRow {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  previous_slugs: string[] | null;
+  is_public: boolean;
+  updated_at: string;
+  cover_image_url: string | null;
+  collection_items?: CollectionItemRow[];
+}
+
+interface LoadPublicCollectionArgs {
+  supabase: SupabaseClient<Database>;
+  username: string;
+  slug: string;
+  searchId?: string;
+  includeItems: boolean;
+}
+
+interface LoadPublicCollectionResult {
+  profile: PublicProfileRow | null;
+  collection: PublicCollectionRow | null;
+  redirectSlug?: string;
+}
+
+async function loadPublicCollection({
+  supabase,
+  username,
+  slug,
+  searchId,
+  includeItems,
+}: LoadPublicCollectionArgs): Promise<LoadPublicCollectionResult> {
   const usernameLower = username.toLowerCase();
   const profileResponse = await supabase
     .from("profiles")
@@ -22,51 +65,139 @@ export default async function PublicCollectionPage({ params, searchParams }: Pag
     .maybeSingle();
 
   if (profileResponse.error) throw profileResponse.error;
-  const profile = profileResponse.data;
+
+  const profile = profileResponse.data as PublicProfileRow | null;
+  if (!profile) {
+    return { profile: null, collection: null };
+  }
+
+  const baseSelect =
+    "id, title, slug, description, previous_slugs, is_public, updated_at, cover_image_url";
+  const collectionSelect = includeItems
+    ? `${baseSelect}, collection_items(position, note, tmdb_id)`
+    : baseSelect;
+
+  const slugLower = slug.toLowerCase();
+  const collectionResponse = await supabase
+    .from("collections")
+    .select(collectionSelect)
+    .eq("owner_id", profile.id)
+    .eq("slug", slugLower)
+    .maybeSingle();
+
+  if (collectionResponse.error) throw collectionResponse.error;
+
+  const collection = collectionResponse.data as PublicCollectionRow | null;
+  if (collection) {
+    return { profile, collection };
+  }
+
+  const historicResponse = await supabase
+    .from("collections")
+    .select("slug")
+    .eq("owner_id", profile.id)
+    .contains("previous_slugs", [slugLower])
+    .maybeSingle();
+
+  if (historicResponse.error) throw historicResponse.error;
+  if (historicResponse.data) {
+    return { profile, collection: null, redirectSlug: historicResponse.data.slug };
+  }
+
+  if (searchId) {
+    const byIdResponse = await supabase
+      .from("collections")
+      .select("slug")
+      .eq("owner_id", profile.id)
+      .eq("id", searchId)
+      .maybeSingle();
+
+    if (byIdResponse.error) throw byIdResponse.error;
+    if (byIdResponse.data) {
+      return { profile, collection: null, redirectSlug: byIdResponse.data.slug };
+    }
+  }
+
+  return { profile, collection: null };
+}
+
+export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
+  const { username, collectionSlug } = await params;
+  const query = await searchParams;
+  const supabase = await getSupabaseServerClient();
+  const { profile, collection, redirectSlug } = await loadPublicCollection({
+    supabase,
+    username,
+    slug: collectionSlug,
+    searchId: query?.id,
+    includeItems: false,
+  });
+
   if (!profile) {
     notFound();
   }
 
-  const collectionResponse = await supabase
-    .from("collections")
-    .select(
-      "id, title, slug, description, previous_slugs, is_public, updated_at, collection_items(position, note, tmdb_id)"
-    )
-    .eq("owner_id", profile.id)
-    .eq("slug", collectionSlug.toLowerCase())
-    .maybeSingle();
+  if (redirectSlug) {
+    return {};
+  }
 
-  if (collectionResponse.error) throw collectionResponse.error;
-  const collection = collectionResponse.data;
-
-  if (!collection) {
-    const historic = await supabase
-      .from("collections")
-      .select("id, slug")
-      .eq("owner_id", profile.id)
-      .contains("previous_slugs", [collectionSlug.toLowerCase()])
-      .maybeSingle();
-
-    if (historic.data) {
-      redirect(`/c/${profile.username}/${historic.data.slug}`);
-    }
-
-    if (query?.id) {
-      const byId = await supabase
-        .from("collections")
-        .select("slug")
-        .eq("owner_id", profile.id)
-        .eq("id", query.id)
-        .maybeSingle();
-      if (byId.data) {
-        redirect(`/c/${profile.username}/${byId.data.slug}`);
-      }
-    }
-
+  if (!collection || !collection.is_public) {
     notFound();
   }
 
-  if (!collection.is_public) {
+  const env = getServerEnv();
+  const curator = profile.display_name ?? profile.username;
+  const title = `${collection.title} — Curated by ${curator}`;
+  const description =
+    collection.description ?? `A curated film collection by ${curator}.`;
+  const siteBase = env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  const canonical = `${siteBase}/c/${profile.username}/${collection.slug}`;
+  const ogImages = collection.cover_image_url ? [collection.cover_image_url] : undefined;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+      type: "article",
+      images: ogImages,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ogImages,
+    },
+    alternates: {
+      canonical,
+    },
+  };
+}
+
+export default async function PublicCollectionPage({ params, searchParams }: PageProps) {
+  const { username, collectionSlug } = await params;
+  const query = await searchParams;
+  const supabase = await getSupabaseServerClient();
+
+  const { profile, collection, redirectSlug } = await loadPublicCollection({
+    supabase,
+    username,
+    slug: collectionSlug,
+    searchId: query?.id,
+    includeItems: true,
+  });
+
+  if (!profile) {
+    notFound();
+  }
+
+  if (redirectSlug) {
+    redirect(`/c/${profile.username}/${redirectSlug}`);
+  }
+
+  if (!collection || !collection.is_public) {
     notFound();
   }
 
@@ -98,8 +229,10 @@ export default async function PublicCollectionPage({ params, searchParams }: Pag
         position: item.position,
         note: item.note,
         movie: {
+          tmdbId: item.tmdb_id,
           title: movie?.title ?? "Untitled",
           posterUrl: movie?.poster_url ?? null,
+          fallbackPosterUrl,
           releaseYear: movie?.release_year ?? null,
           overview: (overview as string | null) ?? null,
         },
@@ -123,13 +256,13 @@ export default async function PublicCollectionPage({ params, searchParams }: Pag
             className="flex flex-col gap-4 rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_70px_-60px_rgba(15,23,42,0.9)] sm:flex-row"
           >
             <div className="relative h-48 w-full flex-shrink-0 overflow-hidden rounded-2xl sm:w-40">
-              {item.movie.posterUrl ? (
-                <Image src={item.movie.posterUrl} alt={item.movie.title} fill className="object-cover" />
-              ) : (
-                <div className="flex h-full items-center justify-center bg-slate-900/70 text-xs text-slate-500">
-                  No art
-                </div>
-              )}
+              <PosterImage
+                src={item.movie.posterUrl}
+                fallbackSrc={item.movie.fallbackPosterUrl ?? null}
+                alt={item.movie.title}
+                sizes="(max-width: 640px) 100vw, 160px"
+                tmdbId={item.movie.tmdbId}
+              />
             </div>
             <div className="space-y-3">
               <div className="flex items-center gap-3">

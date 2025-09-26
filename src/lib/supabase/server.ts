@@ -25,25 +25,44 @@ export async function createSupabaseServerClient(cookieStore?: CookieStore) {
   const store = cookieStore ?? (await cookies());
   const { NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY } = getServerEnv();
 
-  return createServerClient<Database>(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+  const client = createServerClient<Database>(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     cookies: {
       get(name: string) {
         return store.get(name)?.value;
       },
       set(name: string, value: string, options?: CookieOptions) {
         const mutable = store as MutableCookieStore;
-        mutable.set?.({ name, value, ...(options ?? {}) });
+        if (typeof mutable.set === "function") {
+          try {
+            mutable.set({ name, value, ...(options ?? {}) });
+          } catch (error) {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("Skipping cookie.set outside a Server Action", error);
+            }
+          }
+        }
       },
       remove(name: string, options?: CookieOptions) {
         const mutable = store as MutableCookieStore;
-        if (mutable.delete) {
-          mutable.delete(name, options);
-        } else if (mutable.set) {
-          mutable.set({ name, value: "", expires: new Date(0), ...(options ?? {}) });
+        try {
+          if (typeof mutable.delete === "function") {
+            mutable.delete(name, options);
+          } else if (typeof mutable.set === "function") {
+            mutable.set({ name, value: "", expires: new Date(0), ...(options ?? {}) });
+          }
+        } catch (error) {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("Skipping cookie.remove outside a Server Action", error);
+          }
         }
       },
     },
   });
+
+  // We always pair getSession with getUser for verification, so suppress noisy warnings.
+  (client.auth as typeof client.auth & { suppressGetSessionWarning?: boolean }).suppressGetSessionWarning = true;
+
+  return client;
 }
 
 export const getSupabaseServerClient = cache(async () => createSupabaseServerClient());

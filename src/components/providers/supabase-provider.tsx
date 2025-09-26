@@ -25,6 +25,25 @@ interface SupabaseContextValue {
 
 const SupabaseContext = createContext<SupabaseContextValue | null>(null);
 
+async function fetchVerifiedSession(client: SupabaseClient<Database>): Promise<Session | null> {
+  const [sessionResult, userResult] = await Promise.all([
+    client.auth.getSession(),
+    client.auth.getUser(),
+  ]);
+
+  if (sessionResult.error) throw sessionResult.error;
+  if (userResult.error) throw userResult.error;
+
+  const session = sessionResult.data.session;
+  const user = userResult.data.user ?? null;
+
+  if (!session || !user) {
+    return null;
+  }
+
+  return { ...session, user } as Session;
+}
+
 export function SupabaseProvider({
   children,
   initialSession = null,
@@ -42,52 +61,104 @@ export function SupabaseProvider({
 
   useEffect(() => {
     let isMounted = true;
-    if (!initialSession) {
-      supabase.auth
-        .getSession()
-        .then(({ data }) => {
-          if (!isMounted) return;
-          setSession(data.session ?? null);
+
+    async function initialize() {
+      if (initialSession) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const verifiedSession = await fetchVerifiedSession(supabase);
+        if (!isMounted) return;
+        setSession(verifiedSession);
+        if (!verifiedSession) {
+          setProfile(null);
+        }
+      } catch {
+        if (!isMounted) return;
+        setSession(null);
+        setProfile(null);
+      } finally {
+        if (isMounted) {
           setLoading(false);
-        })
-        .catch(() => setLoading(false));
-    } else {
-      setLoading(false);
+        }
+      }
     }
 
-    if (initialProfile) {
-      setProfile(initialProfile);
-    } else if (initialSession?.user) {
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', initialSession.user.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (!isMounted) return;
-          setProfile((data as Profile | null) ?? null);
-        })
-        .catch(() => undefined);
-    }
+    initialize();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange(async () => {
+      if (!isMounted) return;
+      try {
+        const verifiedSession = await fetchVerifiedSession(supabase);
+        if (!isMounted) return;
+        setSession(verifiedSession);
+        if (!verifiedSession) {
+          setProfile(null);
+        }
+      } catch {
+        if (!isMounted) return;
+        setSession(null);
+        setProfile(null);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     });
 
     return () => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase, initialSession, initialProfile]);
+  }, [supabase, initialSession]);
+
+  useEffect(() => {
+    setProfile(initialProfile ?? null);
+  }, [initialProfile]);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      return;
+    }
+    if (profile?.id === userId) {
+      return;
+    }
+
+    let active = true;
+    supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!active) return;
+        setProfile((data as Profile | null) ?? null);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [supabase, session?.user?.id, profile?.id]);
 
   const refreshSession = useCallback(async () => {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    setSession(data.session ?? null);
-    return data.session ?? null;
+    try {
+      const verifiedSession = await fetchVerifiedSession(supabase);
+      setSession(verifiedSession);
+      if (!verifiedSession) {
+        setProfile(null);
+      }
+      return verifiedSession;
+    } catch (error) {
+      setSession(null);
+      setProfile(null);
+      throw error;
+    }
   }, [supabase]);
 
   const signOut = useCallback(async () => {

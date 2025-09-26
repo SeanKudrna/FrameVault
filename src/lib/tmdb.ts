@@ -15,6 +15,7 @@ export interface MovieSummary {
   releaseYear: number | null;
   overview: string | null;
   posterUrl: string | null;
+  fallbackPosterUrl?: string | null;
   backdropUrl: string | null;
   genres: { id: number; name: string }[];
   runtime: number | null;
@@ -35,6 +36,19 @@ interface TMDBMovieResult {
   genres?: { id: number; name: string }[];
   runtime?: number | null;
   vote_average?: number | null;
+  vote_count?: number | null;
+  popularity?: number | null;
+}
+
+interface TMDBImagesResult {
+  posters?: Array<{
+    file_path?: string | null;
+    vote_count?: number | null;
+    vote_average?: number | null;
+    iso_639_1?: string | null;
+    width?: number | null;
+    height?: number | null;
+  }>;
 }
 
 class TMDBError extends Error {
@@ -70,11 +84,17 @@ function mapMovie(payload: TMDBMovieResult): MovieSummary {
 }
 
 function mapCachedMovie(row: Movie): MovieSummary {
+  let fallbackPosterUrl: string | null = null;
+  if (row.tmdb_json && typeof row.tmdb_json === "object" && "fallbackPosterUrl" in row.tmdb_json) {
+    const fallback = (row.tmdb_json as Record<string, unknown>)["fallbackPosterUrl"];
+    fallbackPosterUrl = typeof fallback === "string" ? fallback : null;
+  }
   return {
     tmdbId: row.tmdb_id,
     title: row.title ?? "Untitled",
     overview: row.tmdb_json && typeof row.tmdb_json === "object" && "overview" in row.tmdb_json ? (row.tmdb_json as Record<string, unknown>)["overview"] as string | null : null,
-    posterUrl: row.poster_url,
+    posterUrl: row.poster_url ?? fallbackPosterUrl,
+    fallbackPosterUrl,
     backdropUrl: row.backdrop_url,
     releaseYear: row.release_year ?? null,
     genres: Array.isArray(row.genres)
@@ -86,6 +106,83 @@ function mapCachedMovie(row: Movie): MovieSummary {
         ? Number((row.tmdb_json as Record<string, unknown>)["vote_average"])
         : null,
   };
+}
+
+function normalizeSearchValue(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function tokenizeSearchValue(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function computeSearchScore(result: TMDBMovieResult, query: string) {
+  const normalizedQuery = normalizeSearchValue(query);
+  const queryTokens = tokenizeSearchValue(query);
+
+  const candidateTitles = [result.title, result.original_title, result.name].filter(
+    (value): value is string => Boolean(value)
+  );
+
+  let titleScore = 0;
+
+  for (const candidate of candidateTitles) {
+    const normalizedTitle = normalizeSearchValue(candidate);
+    if (!normalizedTitle) continue;
+
+    if (normalizedTitle === normalizedQuery) {
+      titleScore = Math.max(titleScore, 5000);
+    } else if (normalizedTitle.startsWith(normalizedQuery)) {
+      titleScore = Math.max(titleScore, 4000);
+    } else if (normalizedTitle.includes(normalizedQuery)) {
+      titleScore = Math.max(titleScore, 3200);
+    }
+
+    const tokenizedTitle = tokenizeSearchValue(candidate);
+    if (queryTokens.length && tokenizedTitle.length) {
+      let matches = 0;
+      for (const token of queryTokens) {
+        if (token.length <= 2) continue;
+        if (tokenizedTitle.some((titleToken) => titleToken === token)) {
+          matches += 1;
+        } else if (tokenizedTitle.some((titleToken) => titleToken.startsWith(token))) {
+          matches += 0.5;
+        }
+      }
+      if (matches) {
+        titleScore = Math.max(titleScore, 2800 + matches * 120);
+      }
+    }
+  }
+
+  const popularityScore = (() => {
+    const popularity = result.popularity ?? 0;
+    return popularity > 0 ? Math.log10(popularity + 1) * 400 : 0;
+  })();
+
+  const voteAverageScore = (result.vote_average ?? 0) * 20;
+  const voteCountScore = (() => {
+    const voteCount = result.vote_count ?? 0;
+    return voteCount > 0 ? Math.log10(voteCount + 1) * 120 : 0;
+  })();
+
+  let recencyScore = 0;
+  const releaseDate = result.release_date ?? result.first_air_date ?? null;
+  if (releaseDate) {
+    const releaseYear = Number.parseInt(releaseDate.slice(0, 4), 10);
+    if (!Number.isNaN(releaseYear)) {
+      const currentYear = new Date().getFullYear();
+      const age = Math.abs(currentYear - releaseYear);
+      recencyScore = Math.max(0, 180 - age * 8);
+    }
+  }
+
+  return titleScore + popularityScore + voteAverageScore + voteCountScore + recencyScore;
 }
 
 async function cacheMovies(movies: MovieSummary[], tmdbPayloads?: Record<number, unknown>) {
@@ -103,6 +200,7 @@ async function cacheMovies(movies: MovieSummary[], tmdbPayloads?: Record<number,
       tmdbPayloads?.[movie.tmdbId] ?? {
         overview: movie.overview,
         vote_average: movie.voteAverage,
+        fallbackPosterUrl: movie.fallbackPosterUrl ?? null,
       },
   }));
 
@@ -175,7 +273,13 @@ export async function handleSearch(request: Request) {
       page: 1,
     });
 
-    const mapped = data.results.slice(0, 20).map(mapMovie);
+    const ranked = data.results
+      .map((result) => ({ result, score: computeSearchScore(result, query) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20)
+      .map(({ result }) => result);
+
+    const mapped = ranked.map(mapMovie);
     await cacheMovies(mapped);
 
     return new Response(
@@ -214,6 +318,8 @@ export async function handleMovie(request: Request) {
     return apiError("invalid_request", "Movie id must be numeric", 400);
   }
 
+  const forceRefresh = url.searchParams.get("refresh") === "1";
+
   const supabase = await getSupabaseServerClient();
   const { data: userData } = await supabase.auth.getUser();
   const ip = getClientIp(request);
@@ -248,7 +354,7 @@ export async function handleMovie(request: Request) {
 
   if (cacheError) throw cacheError;
 
-  if (cached) {
+  if (cached && !forceRefresh) {
     const isFresh = Date.now() - new Date(cached.updated_at).getTime() < SEVEN_DAYS_MS;
     if (isFresh) {
       return new Response(JSON.stringify({ movie: mapCachedMovie(cached) }), {
@@ -260,8 +366,18 @@ export async function handleMovie(request: Request) {
 
   try {
     const payload = await tmdbFetch<TMDBMovieResult>(`movie/${tmdbId}`);
-    const mapped = mapMovie(payload);
-    await cacheMovies([mapped], { [mapped.tmdbId]: payload });
+    let mapped = mapMovie(payload);
+
+    const fallbackPosterUrl = await findBestPosterImage(tmdbId, payload.poster_path ?? null);
+    if (fallbackPosterUrl) {
+      mapped = {
+        ...mapped,
+        posterUrl: fallbackPosterUrl,
+        fallbackPosterUrl,
+      };
+    }
+
+    await cacheMovies([mapped], { [mapped.tmdbId]: { ...payload, fallbackPosterUrl } });
     return new Response(JSON.stringify({ movie: mapped }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -277,5 +393,37 @@ export async function handleMovie(request: Request) {
       return apiError("tmdb_error", error.message, error.status);
     }
     throw error;
+  }
+}
+
+async function findBestPosterImage(movieId: number, currentPath: string | null) {
+  try {
+    const data = await tmdbFetch<TMDBImagesResult>(`movie/${movieId}/images`, {
+      include_image_language: "en,null",
+    });
+    const posters = data.posters?.filter((poster) => poster.file_path) ?? [];
+    if (!posters.length) return null;
+
+    const sorted = posters.sort((a, b) => (b.vote_count ?? 0) - (a.vote_count ?? 0));
+    const preferredLanguages = ["en", null, "", undefined];
+
+    let candidate: (typeof posters)[number] | undefined;
+    for (const lang of preferredLanguages) {
+      candidate = sorted.find((poster) => (poster.iso_639_1 ?? null) === lang);
+      if (candidate) break;
+    }
+    if (!candidate) {
+      candidate = sorted[0];
+    }
+
+    if (!candidate?.file_path) return null;
+    if (currentPath && candidate.file_path === currentPath) {
+      return null;
+    }
+
+    return buildImage(candidate.file_path, "w500");
+  } catch (error) {
+    console.warn(`Unable to fetch TMDB poster alternatives for movie ${movieId}`, error);
+    return null;
   }
 }
