@@ -216,6 +216,9 @@ export async function deleteCollectionAction(collectionId: string) {
   if (error) throw error;
 
   revalidatePath("/app");
+  // Revalidate collection detail and user collection pages
+  revalidatePath(`/collections/${collectionId}`);
+  revalidatePath(`/app/collections/${collectionId}`);
   if (existing?.is_public && existing?.slug) {
     revalidatePath(`/c/${profile.username}/${existing.slug}`);
   }

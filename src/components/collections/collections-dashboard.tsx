@@ -232,6 +232,7 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
   const [title, setTitle] = useState(collection.title);
   const [description, setDescription] = useState(collection.description ?? "");
   const [pending, startTransition] = useTransition();
+  const [isDeleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function shouldIgnoreActivation(target: HTMLElement) {
@@ -244,6 +245,7 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
 
   function handleCardClick(event: React.MouseEvent<HTMLDivElement>) {
     if (shouldIgnoreActivation(event.target as HTMLElement)) return;
+    if (pending || isDeleting) return;
     navigateToEditor();
   }
 
@@ -251,6 +253,7 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
     if (event.key === "Enter" || event.key === " ") {
       if (shouldIgnoreActivation(event.target as HTMLElement)) return;
       event.preventDefault();
+      if (pending || isDeleting) return;
       navigateToEditor();
     }
   }
@@ -296,6 +299,7 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
 
   function handleDelete() {
     setError(null);
+    setDeleting(true);
     // Deletions trigger revalidation of the dashboard and any public pages via
     // the server action. Using a transition keeps the card responsive while the
     // request is in flight.
@@ -312,6 +316,8 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
         const message = err instanceof Error ? err.message : "Unable to delete";
         setError(message);
         toast({ title: "Unable to delete", description: message, variant: "error" });
+      } finally {
+        setDeleting(false);
       }
     });
   }
@@ -365,22 +371,31 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                 <Ellipsis size={18} />
               </Button>
             </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content className="z-50 min-w-[180px] rounded-xl border border-slate-800/70 bg-slate-900/90 p-2 text-sm text-slate-100 shadow-xl">
-                <DropdownMenu.Item
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={(event) => {
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              data-collection-card-ignore
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              className="z-50 min-w-[180px] rounded-xl border border-slate-800/70 bg-slate-900/90 p-2 text-sm text-slate-100 shadow-xl"
+            >
+              <DropdownMenu.Item
+                data-collection-card-ignore
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                onSelect={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     router.push(`/collections/${collection.id}`);
                   }}
                 >
                   <Sparkles size={16} />
                   Open editor
                 </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={(event) => {
+              <DropdownMenu.Item
+                data-collection-card-ignore
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                onSelect={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     const origin =
                       typeof window !== "undefined"
                         ? window.location.origin
@@ -416,10 +431,12 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                   <Eye size={16} />
                   Copy public link
                 </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={(event) => {
+              <DropdownMenu.Item
+                data-collection-card-ignore
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                onSelect={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     setRenaming((prev) => !prev);
                     setError(null);
                   }}
@@ -427,10 +444,12 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                   <PencilLine size={16} />
                   Rename
                 </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                  onSelect={(event) => {
+              <DropdownMenu.Item
+                data-collection-card-ignore
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
+                onSelect={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     handleUpdate({ is_public: !collection.is_public });
                   }}
                 >
@@ -438,10 +457,12 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
                   {collection.is_public ? "Make private" : "Make public"}
                 </DropdownMenu.Item>
                 <DropdownMenu.Separator className="my-2 h-px bg-slate-800/70" />
-                <DropdownMenu.Item
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-rose-400 hover:bg-rose-500/10"
-                  onSelect={(event) => {
+              <DropdownMenu.Item
+                data-collection-card-ignore
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-rose-400 hover:bg-rose-500/10"
+                onSelect={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     handleDelete();
                   }}
                 >
