@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Authenticated layout frame including sidebar navigation, user summary, and
+ * sign-out controls. Client-side to access Supabase context helpers.
+ */
+
 import { Film, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,16 +13,25 @@ import { useSupabase } from "@/components/providers/supabase-provider";
 import type { Profile } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 
+/**
+ * Props for the authenticated application shell layout.
+ */
 interface AppShellProps {
   children: React.ReactNode;
   profile: Profile;
 }
 
+/**
+ * Navigation options displayed in the sidebar for authenticated users.
+ */
 const navItems = [
   { href: "/app", label: "Dashboard", icon: LayoutDashboard },
   { href: "/settings/profile", label: "Profile", icon: Settings },
 ];
 
+/**
+ * Renders the authenticated layout with navigation, user info, and sign-out controls.
+ */
 export function AppShell({ children, profile }: AppShellProps) {
   const pathname = usePathname();
   const { signOut } = useSupabase();

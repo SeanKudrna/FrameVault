@@ -1,12 +1,17 @@
 "use client";
 
+/**
+ * Client-side sign-in/sign-up form that talks directly to Supabase auth while
+ * handling mode toggles and demo credentials messaging. The component stays
+ * self-contained so the page can remain a simple wrapper.
+ */
+
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSupabase } from "@/components/providers/supabase-provider";
 import { formatError } from "@/lib/utils";
-
 export function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -19,6 +24,11 @@ export function SignInForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Handles form submission by performing either a password sign-in or sign-up
+   * request, then refreshing the session context so protected routes render
+   * immediately.
+   */
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);

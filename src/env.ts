@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/**
+ * Environment schema validated on the server. Ensures critical secrets and URLs are present.
+ */
 const serverSchema = z.object({
   NEXT_PUBLIC_SITE_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url({ message: "NEXT_PUBLIC_SUPABASE_URL must be a valid URL" }),
@@ -20,6 +23,9 @@ const serverSchema = z.object({
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 });
 
+/**
+ * Subset of the environment exposed to the browser. Validated separately to avoid leaking secrets.
+ */
 const clientSchema = serverSchema.pick({
   NEXT_PUBLIC_SITE_URL: true,
   NEXT_PUBLIC_SUPABASE_URL: true,
@@ -34,6 +40,9 @@ type ClientEnv = z.infer<typeof clientSchema>;
 
 let serverEnvCache: ServerEnv | null = null;
 
+/**
+ * Reads and validates the process environment for server-only variables, caching the result.
+ */
 export function getServerEnv(): ServerEnv {
   if (serverEnvCache) return serverEnvCache;
   const parsed = serverSchema.safeParse(process.env);
@@ -45,6 +54,9 @@ export function getServerEnv(): ServerEnv {
   return serverEnvCache;
 }
 
+/**
+ * Validates and returns the environment values safe to expose to client code.
+ */
 export function getClientEnv(): ClientEnv {
   const parsed = clientSchema.safeParse({
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,

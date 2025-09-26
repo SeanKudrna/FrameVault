@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Interactive profile settings form that syncs with the Supabase context after
+ * a successful update.
+ */
+
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +13,9 @@ import { useToast } from "@/components/providers/toast-provider";
 import type { Profile } from "@/lib/supabase/types";
 import { updateProfileAction } from "@/app/(app)/settings/actions";
 
+/**
+ * Client form for updating a user's public display name and username.
+ */
 export function ProfileSettingsForm({ profile }: { profile: Profile }) {
   const { setProfile } = useSupabase();
   const { toast } = useToast();
@@ -23,6 +31,9 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
     return () => clearTimeout(timer);
   }, [message]);
 
+  /**
+   * Submits the profile update via server action and surfaces toast feedback.
+   */
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);

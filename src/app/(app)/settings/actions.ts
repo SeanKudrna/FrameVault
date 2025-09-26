@@ -1,16 +1,28 @@
 "use server";
 
+/**
+ * Server actions powering the profile settings experience. Keeping the action
+ * here alongside the route avoids leaking mutation logic into client
+ * components.
+ */
+
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { ApiError } from "@/lib/api";
 import { slugify } from "@/lib/slugs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+/**
+ * Payload accepted when updating a profile from the settings form.
+ */
 interface UpdateProfileInput {
   username: string;
   displayName?: string;
 }
 
+/**
+ * Server action that updates the authenticated user's profile and revalidates dependent routes.
+ */
 export async function updateProfileAction(input: UpdateProfileInput) {
   const cookieStore = await cookies();
   const supabase = await createSupabaseServerClient(cookieStore);
@@ -50,6 +62,8 @@ export async function updateProfileAction(input: UpdateProfileInput) {
 
   if (error) throw error;
 
+  // Refresh both the settings page and dashboards so UI reflects the latest
+  // username/display name. Public profile URLs also receive the new slug.
   revalidatePath("/settings/profile");
   revalidatePath("/app");
   revalidatePath(`/c/${username}`);

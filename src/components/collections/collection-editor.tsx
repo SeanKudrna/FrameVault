@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * Interactive editor for managing collection metadata, items, and publication
+ * state. Handles drag-and-drop ordering, TMDB search integration, and server
+ * action orchestration from the client.
+ */
+
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -37,12 +43,21 @@ import type { CollectionItemWithMovie } from "@/types/collection";
 import type { MovieSummary } from "@/lib/tmdb";
 import type { Profile } from "@/lib/supabase/types";
 
+/**
+ * DOM id referenced by the drag-and-drop accessibility instructions element.
+ */
 const DND_INSTRUCTIONS_ID = "framevault-dnd-instructions";
+/**
+ * Screen reader guidance describing how to reorder items with the keyboard.
+ */
 const DND_SCREEN_READER_INSTRUCTIONS = {
   draggable:
     "Press space bar to pick up an item. Use the arrow keys to move, space bar to drop, and escape to cancel.",
 } as const;
 
+/**
+ * Props required to render the collection editor.
+ */
 interface CollectionEditorProps {
   collection: {
     id: string;
@@ -58,11 +73,16 @@ interface CollectionEditorProps {
   items: CollectionItemWithMovie[];
 }
 
+/**
+ * Full-featured editor for managing a collection's metadata and item order.
+ */
 export function CollectionEditor({ collection, profile, items: initialItems }: CollectionEditorProps) {
   const router = useRouter();
   const { toast } = useToast();
   const sensors = useSensors(
     useSensor(PointerSensor, {
+      // Require a slight drag distance before activation to avoid accidental
+      // reorder gestures while clicking controls inside a card.
       activationConstraint: { distance: 8 },
     })
   );
@@ -89,6 +109,9 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
 
   const existingTmdbIds = useMemo(() => items.map((item) => item.tmdb_id), [items]);
   const handleAddMovie = useCallback(
+    /**
+     * Adds a TMDB movie to the collection via server action and refreshes the page on success.
+     */
     (movie: MovieSummary) => {
       startTransition(async () => {
         try {
@@ -144,6 +167,9 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
 
       setItems(reordered);
 
+      // Persist the new ordering via server action, reverting the UI if the
+      // mutation fails. Using `startTransition` keeps the UI responsive during
+      // the async round-trip.
       startTransition(async () => {
         try {
           await reorderCollectionItemsAction({
@@ -214,6 +240,8 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
 
   const handleRemoveItem = useCallback(
     (item: CollectionItemWithMovie) => {
+      // Removal triggers both the mutation and a route refresh so server data
+      // stays authoritative (e.g., revalidated counts, slug revalidation).
       startTransition(async () => {
         try {
           await removeCollectionItemAction({
@@ -239,6 +267,8 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
 
   const handleNoteSave = useCallback(
     (item: CollectionItemWithMovie, note: string) => {
+      // Notes are lightweight text fields, but we still funnel through the
+      // server action to persist immediately and trigger route revalidation.
       startTransition(async () => {
         try {
           await updateCollectionItemNoteAction({
@@ -263,7 +293,14 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
     [collection.id, router, startTransition, toast]
   );
 
-  const shareUrl = (typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000') + `/c/${profile.username}/${collection.slug}`;
+  // Assemble the share URL using the browser origin when available. Falls back
+  // to the configured site URL during SSR so the UI still shows a reasonable
+  // link while hydrating.
+  const shareUrl =
+    (typeof window !== "undefined"
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000") +
+    `/c/${profile.username}/${collection.slug}`;
 
   return (
     <div className="space-y-10">
@@ -384,12 +421,18 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
   );
 }
 
+/**
+ * Props for a sortable movie card row.
+ */
 interface SortableMovieCardProps {
   item: CollectionItemWithMovie;
   onRemove: () => void;
   onSaveNote: (note: string) => void;
 }
 
+/**
+ * Sortable wrapper that wires a movie card into the DnD context.
+ */
 const SortableMovieCard = memo(function SortableMovieCard({ item, onRemove, onSaveNote }: SortableMovieCardProps) {
   const {
     attributes,
@@ -434,6 +477,9 @@ const SortableMovieCard = memo(function SortableMovieCard({ item, onRemove, onSa
 SortableMovieCard.displayName = "SortableMovieCard";
 
 
+/**
+ * Props for the shared movie card body rendered in both editable and read-only contexts.
+ */
 interface MovieCardBodyProps {
   item: CollectionItemWithMovie;
   note?: string;
@@ -444,6 +490,9 @@ interface MovieCardBodyProps {
   readOnly?: boolean;
 }
 
+/**
+ * Displays poster art, title, and note editor for a collection item. Supports read-only mode.
+ */
 function MovieCardBody({
   item,
   note,

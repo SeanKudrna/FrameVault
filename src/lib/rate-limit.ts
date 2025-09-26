@@ -1,13 +1,40 @@
+/**
+ * Shared rate limiting utilities for TMDB proxy routes. All counters are stored
+ * inside Supabase so that multiple server instances share the same view of
+ * request usage.
+ */
+
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 
+/**
+ * Duration of each rate-limit window. Requests are counted per minute which
+ * keeps the calculations simple (floor timestamps to the nearest minute) while
+ * still protecting the upstream API from bursts.
+ */
 const WINDOW_MS = 60 * 1000;
 
+/**
+ * Describes an actor (user or IP) that should be tracked for rate limiting,
+ * including the maximum number of requests allowed in the current window. Each
+ * actor is checked independently so we can combine per-user and per-IP buckets
+ * for extra safety.
+ */
 interface RateLimitActor {
   actorType: "user" | "ip";
   actorId: string;
   limit: number;
 }
 
+/**
+ * Ensures each actor stays within the allowed request threshold for the given
+ * TMDB bucket. Throws a `RateLimitError` when the limit is exceeded so callers
+ * can respond accordingly with `429` responses or custom UI.
+ *
+ * The function performs a single read (if present) followed by an update or
+ * insert so that each request increments the counter exactly once per actor.
+ * Any unexpected Supabase error is rethrown to surface infrastructure issues
+ * loudly.
+ */
 export async function enforceRateLimit(bucket: "search" | "movie", actors: RateLimitActor[]) {
   const supabase = getSupabaseServiceRoleClient();
   const now = Date.now();
@@ -61,12 +88,22 @@ export async function enforceRateLimit(bucket: "search" | "movie", actors: RateL
   }
 }
 
+/**
+ * Error type thrown when rate limiting prevents a request from proceeding. The
+ * `retryAfter` value is expressed in seconds to align with the HTTP header and
+ * is used by the API routes to set the `Retry-After` response header.
+ */
 export interface RateLimitError extends Error {
   code: "rate_limited";
   status: 429;
   retryAfter: number;
 }
 
+/**
+ * Type guard that narrows unknown errors into the custom `RateLimitError` shape
+ * so `catch` blocks can confidently access `retryAfter` without defensive
+ * casting.
+ */
 export function isRateLimitError(error: unknown): error is RateLimitError {
   return typeof error === "object" && error !== null && (error as RateLimitError).code === "rate_limited";
 }

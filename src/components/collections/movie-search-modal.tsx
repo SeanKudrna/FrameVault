@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Modal for searching TMDB and selecting a movie to add to a collection. All
+ * data fetching happens client-side against our proxied API routes.
+ */
+
 import Image from "next/image";
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -8,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { MovieSummary } from "@/lib/tmdb";
 
+/**
+ * Props controlling the TMDB movie search modal.
+ */
 interface MovieSearchModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -15,12 +23,19 @@ interface MovieSearchModalProps {
   existingTmdbIds: number[];
 }
 
+/**
+ * Modal dialog that lets users search TMDB and add movies to a collection.
+ */
 export function MovieSearchModal({ open, onOpenChange, onSelect, existingTmdbIds }: MovieSearchModalProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MovieSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Queries the TMDB search API and stores the resulting list of movies. Results
+   * are filtered client-side to prevent selecting duplicates.
+   */
   async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (query.trim().length < 2) {

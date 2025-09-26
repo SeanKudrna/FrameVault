@@ -1,3 +1,8 @@
+/**
+ * Server component for the authenticated collection editor. It gathers all
+ * collection metadata, associated items, and cached TMDB movies before handing
+ * the data off to the interactive editor UI.
+ */
 
 import { notFound, redirect } from "next/navigation";
 import { CollectionEditor } from "@/components/collections/collection-editor";
@@ -5,10 +10,16 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile, Movie } from "@/lib/supabase/types";
 import type { CollectionItemWithMovie } from "@/types/collection";
 
+/**
+ * Route params accepted by the collection editor page.
+ */
 interface PageParams {
   params: Promise<{ collectionId: string }> | { collectionId: string };
 }
 
+/**
+ * Server-rendered collection editor that loads collection data, movies, and passes them to the editor UI.
+ */
 export default async function CollectionEditorPage({ params }: PageParams) {
   const { collectionId } = await params;
   const supabase = await getSupabaseServerClient();
@@ -65,6 +76,9 @@ export default async function CollectionEditorPage({ params }: PageParams) {
     }
   }
 
+  // Combine the raw collection items with their cached TMDB metadata, filling
+  // in optional fields (overview, vote average) from the JSON payload to avoid
+  // issuing additional TMDB requests on the client.
   const mappedItems: CollectionItemWithMovie[] = items
     .map((item) => {
       const movie = moviesMap.get(item.tmdb_id) ?? null;

@@ -1,3 +1,7 @@
+/**
+ * Public reader experience for shared collections. Handles slug history,
+ * metadata generation, and rendering of cached TMDB data.
+ */
 
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
@@ -7,23 +11,35 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database, Movie } from "@/lib/supabase/types";
 import { PosterImage } from "@/components/media/poster-image";
 
+/**
+ * Params and search params provided to the public collection routes.
+ */
 interface PageProps {
   params: Promise<{ username: string; collectionSlug: string }> | { username: string; collectionSlug: string };
   searchParams: { id?: string } | Promise<{ id?: string }>;
 }
 
+/**
+ * Minimal profile projection needed for public pages.
+ */
 interface PublicProfileRow {
   id: string;
   username: string;
   display_name: string | null;
 }
 
+/**
+ * Collection item row returned when loading public collections.
+ */
 interface CollectionItemRow {
   position: number;
   note: string | null;
   tmdb_id: number;
 }
 
+/**
+ * Public collection structure pulled from Supabase.
+ */
 interface PublicCollectionRow {
   id: string;
   title: string;
@@ -36,6 +52,9 @@ interface PublicCollectionRow {
   collection_items?: CollectionItemRow[];
 }
 
+/**
+ * Arguments controlling how `loadPublicCollection` queries Supabase.
+ */
 interface LoadPublicCollectionArgs {
   supabase: SupabaseClient<Database>;
   username: string;
@@ -44,12 +63,20 @@ interface LoadPublicCollectionArgs {
   includeItems: boolean;
 }
 
+/**
+ * Result from loading a public collection, including redirect info when slugs changed.
+ */
 interface LoadPublicCollectionResult {
   profile: PublicProfileRow | null;
   collection: PublicCollectionRow | null;
   redirectSlug?: string;
 }
 
+/**
+ * Fetches a public collection by slug, accounting for historic slugs and
+ * optional ID lookups. The helper returns redirect information so callers can
+ * issue permanent redirects without executing duplicate queries.
+ */
 async function loadPublicCollection({
   supabase,
   username,
@@ -121,6 +148,9 @@ async function loadPublicCollection({
   return { profile, collection: null };
 }
 
+/**
+ * Generates SEO metadata for public collection pages, handling slug redirects gracefully.
+ */
 export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const { username, collectionSlug } = await params;
   const query = await searchParams;
@@ -176,6 +206,9 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   };
 }
 
+/**
+ * Public-facing collection page showing curated titles and curator notes.
+ */
 export default async function PublicCollectionPage({ params, searchParams }: PageProps) {
   const { username, collectionSlug } = await params;
   const query = await searchParams;
@@ -217,12 +250,18 @@ export default async function PublicCollectionPage({ params, searchParams }: Pag
     }
   }
 
+  // Transform the raw collection items into a render-friendly shape, merging in
+  // cached TMDB data (poster, overview, release year) to keep the UI stateless.
   const mappedItems = items
     .map((item) => {
       const movie = moviesMap.get(item.tmdb_id) ?? null;
       const overview =
         movie?.tmdb_json && typeof movie.tmdb_json === "object" && "overview" in movie.tmdb_json
           ? (movie.tmdb_json as Record<string, unknown>)["overview"]
+          : null;
+      const fallbackPosterUrl =
+        movie?.tmdb_json && typeof movie.tmdb_json === "object" && "fallbackPosterUrl" in movie.tmdb_json
+          ? ((movie.tmdb_json as Record<string, unknown>)["fallbackPosterUrl"] as string | null)
           : null;
       return {
         id: `${collection.id}-${item.position}`,

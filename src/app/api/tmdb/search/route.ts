@@ -1,3 +1,8 @@
+/**
+ * API route that proxies TMDB search queries. All heavy lifting happens in the
+ * shared handler so the route remains a thin wrapper for error logging.
+ */
+
 import type { NextRequest } from "next/server";
 import { handleSearch } from "@/lib/tmdb";
 

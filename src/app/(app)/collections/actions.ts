@@ -10,12 +10,18 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Collection, Database, Profile } from "@/lib/supabase/types";
 
+/**
+ * Payload used when creating a new collection from the dashboard.
+ */
 interface CreateCollectionInput {
   title: string;
   description?: string | null;
   isPublic?: boolean;
 }
 
+/**
+ * Loads the authenticated profile and server Supabase client or throws descriptive errors.
+ */
 async function getProfileOrThrow() {
   const cookieStore = await cookies();
   const supabase = await createSupabaseServerClient(cookieStore);
@@ -42,6 +48,9 @@ async function getProfileOrThrow() {
   return { profile: data as Profile, supabase, userId: user.id };
 }
 
+/**
+ * Revalidates the public collection route when relevant data changes.
+ */
 async function revalidatePublicCollection(profile: Profile, supabase: SupabaseClient<Database>, collectionId: string) {
   const { data } = await supabase
     .from("collections")
@@ -54,6 +63,9 @@ async function revalidatePublicCollection(profile: Profile, supabase: SupabaseCl
   }
 }
 
+/**
+ * Creates a new collection after enforcing plan limits and unique slugs.
+ */
 export async function createCollectionAction(input: CreateCollectionInput) {
   const title = input.title?.trim();
   if (!title) {
@@ -100,6 +112,9 @@ export async function createCollectionAction(input: CreateCollectionInput) {
   return data as Collection;
 }
 
+/**
+ * Updates collection metadata (title, description, visibility) and handles slug revalidation.
+ */
 export async function updateCollectionDetailsAction({
   collectionId,
   title,
@@ -180,6 +195,9 @@ export async function updateCollectionDetailsAction({
   return { ok: true } as const;
 }
 
+/**
+ * Deletes a collection owned by the authenticated user and revalidates dependent paths.
+ */
 export async function deleteCollectionAction(collectionId: string) {
   const { profile, supabase, userId } = await getProfileOrThrow();
 
@@ -204,6 +222,9 @@ export async function deleteCollectionAction(collectionId: string) {
   return { ok: true } as const;
 }
 
+/**
+ * Payload accepted when adding a TMDB movie to a collection.
+ */
 interface AddMovieInput {
   collectionId: string;
   movie: {
@@ -218,6 +239,9 @@ interface AddMovieInput {
   };
 }
 
+/**
+ * Inserts a TMDB movie into a collection and caches its metadata.
+ */
 export async function addMovieToCollectionAction(input: AddMovieInput) {
   const { profile, supabase, userId } = await getProfileOrThrow();
   const { collectionId, movie } = input;
@@ -276,6 +300,9 @@ export async function addMovieToCollectionAction(input: AddMovieInput) {
   return { ok: true } as const;
 }
 
+/**
+ * Removes a collection item after verifying ownership.
+ */
 export async function removeCollectionItemAction({
   collectionItemId,
   collectionId,
@@ -308,6 +335,9 @@ export async function removeCollectionItemAction({
   return { ok: true } as const;
 }
 
+/**
+ * Updates the note attached to a specific collection item.
+ */
 export async function updateCollectionItemNoteAction({
   collectionItemId,
   note,
@@ -341,6 +371,9 @@ export async function updateCollectionItemNoteAction({
   return { ok: true } as const;
 }
 
+/**
+ * Persists a new order for collection items based on drag-and-drop results.
+ */
 export async function reorderCollectionItemsAction({
   collectionId,
   orderedIds,

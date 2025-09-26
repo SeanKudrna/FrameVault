@@ -1,11 +1,22 @@
 "use client";
 
+/**
+ * Poster image component with resilient fallbacks. Handles TMDB outages by
+ * cycling through alternate sizes, service refresh calls, and local placeholders.
+ */
+
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Local placeholder displayed when TMDB assets are unavailable.
+ */
 const FALLBACK_POSTER = "/images/poster-placeholder.svg";
 
+/**
+ * Props for the smart poster image component.
+ */
 interface PosterImageProps {
   src?: string | null;
   fallbackSrc?: string | null;
@@ -15,6 +26,9 @@ interface PosterImageProps {
   tmdbId?: number | null;
 }
 
+/**
+ * Intelligent poster image that handles TMDB fallbacks, alternate sizes, and cache refreshes.
+ */
 export function PosterImage({ src, fallbackSrc = null, alt, className, sizes = "100vw", tmdbId }: PosterImageProps) {
   const initial = src ?? fallbackSrc ?? null;
   const [posterSrc, setPosterSrc] = useState<string | null>(initial);
@@ -23,6 +37,8 @@ export function PosterImage({ src, fallbackSrc = null, alt, className, sizes = "
   const [isFetching, setIsFetching] = useState(false);
   const [sizeIndex, setSizeIndex] = useState(0);
 
+  // Predefined TMDB image widths to fall back through when a particular size is
+  // missing from the CDN cache.
   const tmdbSizeCandidates = useMemo(() => ["w500", "w780", "original"], []);
 
   useEffect(() => {
@@ -79,6 +95,9 @@ export function PosterImage({ src, fallbackSrc = null, alt, className, sizes = "
 
   const resolvedSrc = failed || !posterSrc ? FALLBACK_POSTER : posterSrc;
 
+  /**
+   * Attempts to derive the next available TMDB poster size when the current one fails.
+   */
   function nextTmdbSize(currentUrl: string) {
     const match = currentUrl.match(/\/t\/p\/(w\d+|original)\//);
     if (!match) return null;

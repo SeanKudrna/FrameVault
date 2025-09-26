@@ -1,13 +1,25 @@
+/**
+ * Public marketing landing page for FrameVault. This file intentionally avoids
+ * server data fetching so it can be statically rendered while still reusing our
+ * shared UI primitives.
+ */
+
 import { ArrowRight, Clapperboard, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
+/**
+ * Marketing bullet points shown on the landing page tour section.
+ */
 const highlights = [
   "Create cinematic collections in minutes",
   "Drag-and-drop sequencing with instant sync",
   "Public pages to share your curation",
 ];
 
+/**
+ * Public marketing page introducing FrameVault and linking to the app.
+ */
 export default function LandingPage() {
   return (
     <main className="relative isolate min-h-screen overflow-hidden">

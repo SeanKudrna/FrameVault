@@ -1,3 +1,9 @@
+/**
+ * API route that proxies movie detail lookups through our TMDB integration
+ * layer. Using the shared handler keeps rate limiting and caching consistent
+ * between search and detail endpoints.
+ */
+
 import type { NextRequest } from "next/server";
 import { handleMovie } from "@/lib/tmdb";
 

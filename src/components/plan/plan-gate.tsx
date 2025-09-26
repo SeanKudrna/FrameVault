@@ -1,8 +1,15 @@
 "use client";
 
+/**
+ * Simple upsell component used when plan limits block an action.
+ */
+
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+/**
+ * Props for the `PlanGate` upsell component shown when a feature is restricted by plan.
+ */
 interface PlanGateProps {
   title: string;
   message: string;
@@ -10,6 +17,9 @@ interface PlanGateProps {
   onCtaClick?: () => void;
 }
 
+/**
+ * Displays a locked card with messaging encouraging users to upgrade their plan.
+ */
 export function PlanGate({ title, message, ctaLabel = "View plans", onCtaClick }: PlanGateProps) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-indigo-500/30 bg-indigo-500/10 p-8 text-center text-slate-200">

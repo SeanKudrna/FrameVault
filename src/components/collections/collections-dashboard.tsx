@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * Dashboard entry point that lists a member's collections with create controls
+ * and per-card management menus. Client-side to support optimistic transitions
+ * and dialogs.
+ */
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -19,6 +25,9 @@ import {
 import type { Profile } from "@/lib/supabase/types";
 import { planGateMessage, PLAN_COLLECTION_LIMIT, canCreateCollection } from "@/lib/plan";
 
+/**
+ * Lightweight projection of a collection used within the dashboard grid.
+ */
 export interface CollectionSummary {
   id: string;
   title: string;
@@ -30,11 +39,17 @@ export interface CollectionSummary {
   updated_at: string;
 }
 
+/**
+ * Props for the collections dashboard component.
+ */
 interface CollectionsDashboardProps {
   profile: Profile;
   collections: CollectionSummary[];
 }
 
+/**
+ * Renders the authenticated dashboard with create dialogs, plan gating, and collection cards.
+ */
 export function CollectionsDashboard({ profile, collections }: CollectionsDashboardProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -45,6 +60,8 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
   const [error, setError] = useState<string | null>(null);
 
   const limit = PLAN_COLLECTION_LIMIT[profile.plan] ?? Infinity;
+  // Plan gating logic ensures the UI matches server enforcement before the
+  // member attempts to submit the create form.
   const canCreate = canCreateCollection(profile, collections.length);
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
@@ -60,6 +77,8 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
       return;
     }
 
+    // Use a transition so the dialog remains interactive while the server
+    // action executes and the router refreshes the list.
     startTransition(async () => {
       try {
         await createCollectionAction({
@@ -193,6 +212,9 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
   );
 }
 
+/**
+ * Props for an individual collection card rendered within the dashboard grid.
+ */
 interface CollectionCardProps {
   collection: CollectionSummary;
   profile: Profile;
@@ -200,6 +222,9 @@ interface CollectionCardProps {
   onDeleted: () => void;
 }
 
+/**
+ * Interactive card showing collection details, quick actions, and context menus.
+ */
 function CollectionCard({ collection, profile, onUpdated, onDeleted }: CollectionCardProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -238,6 +263,8 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
     const descriptionValue =
       descriptionValueRaw === undefined ? undefined : descriptionValueRaw || null;
 
+    // Relay the mutation through the shared server action so slug revalidation
+    // and public cache invalidation remain centralised.
     startTransition(async () => {
       setError(null);
       try {
@@ -269,14 +296,17 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
 
   function handleDelete() {
     setError(null);
+    // Deletions trigger revalidation of the dashboard and any public pages via
+    // the server action. Using a transition keeps the card responsive while the
+    // request is in flight.
     startTransition(async () => {
       try {
         await deleteCollectionAction(collection.id);
-      onDeleted();
-      toast({
-        title: "Collection deleted",
-        description: `"${collection.title}" has been removed.`,
-        variant: "success",
+        onDeleted();
+        toast({
+          title: "Collection deleted",
+          description: `"${collection.title}" has been removed.`,
+          variant: "success",
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unable to delete";

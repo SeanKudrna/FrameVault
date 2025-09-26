@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Supabase context provider responsible for managing client-side auth state,
+ * refreshing sessions, and exposing helper actions to the rest of the app.
+ */
+
 import { useRouter } from "next/navigation";
 import {
   createContext,
@@ -13,6 +18,9 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Profile } from "@/lib/supabase/types";
 
+/**
+ * Shape of the Supabase context shared across the application.
+ */
 interface SupabaseContextValue {
   supabase: SupabaseClient<Database>;
   session: Session | null;
@@ -25,6 +33,9 @@ interface SupabaseContextValue {
 
 const SupabaseContext = createContext<SupabaseContextValue | null>(null);
 
+/**
+ * Fetches the current session and verified user concurrently, returning `null` if unauthenticated.
+ */
 async function fetchVerifiedSession(client: SupabaseClient<Database>): Promise<Session | null> {
   const [sessionResult, userResult] = await Promise.all([
     client.auth.getSession(),
@@ -44,6 +55,9 @@ async function fetchVerifiedSession(client: SupabaseClient<Database>): Promise<S
   return { ...session, user } as Session;
 }
 
+/**
+ * Wraps children with Supabase context, handling session verification and profile hydration.
+ */
 export function SupabaseProvider({
   children,
   initialSession = null,
@@ -184,6 +198,9 @@ export function SupabaseProvider({
   return <SupabaseContext.Provider value={value}>{children}</SupabaseContext.Provider>;
 }
 
+/**
+ * Hook for consuming the Supabase context. Throws when used outside of `SupabaseProvider`.
+ */
 export function useSupabase() {
   const ctx = useContext(SupabaseContext);
   if (!ctx) {

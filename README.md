@@ -103,4 +103,10 @@ TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
 - The UI uses Tailwind CSS (JIT via tailwindcss v4 + `@tailwindcss/postcss`).
 - All Supabase mutations go through server actions with centralized gating and revalidation.
 
+## Code Documentation
+
+- The TypeScript and React source files now include comprehensive doc comments describing component responsibilities, server actions, and utility helpers.
+- Look for `/** ... */` blocks above exports for quick insights into data flow, plan gating, and TMDB integration details.
+- Core modules in `src/lib`, authenticated route files under `src/app/(app)`, and UI providers/components all document their side effects and integration points so new contributors can trace behaviour end-to-end.
+
 Happy building!

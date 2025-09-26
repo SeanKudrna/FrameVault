@@ -1,8 +1,15 @@
 "use client";
 
+/**
+ * Styled textarea component with consistent focus rings and colours.
+ */
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Multiline text input styled to match FrameVault's design tokens.
+ */
 export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.TextareaHTMLAttributes<HTMLTextAreaElement>
