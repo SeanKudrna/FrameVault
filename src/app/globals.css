@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --background: #020617;
+  --foreground: #e2e8f0;
+  --muted: #0f172a;
+  --muted-foreground: #94a3b8;
+  --border: #1e293b;
+  --input: #1e293b;
+  --card: #0b1120;
+  --card-foreground: #e2e8f0;
+  --accent: #6366f1;
+  --accent-foreground: #0b1220;
+  --danger: #f87171;
+  --radius: 0.75rem;
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-playfair);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-danger: var(--danger);
+  --radius-lg: var(--radius);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.14), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(14, 116, 144, 0.12), transparent 55%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont;
+  font-feature-settings: "rlig" 1, "calt" 1;
+  letter-spacing: 0.01em;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.35);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent);
+}
+
+button {
+  font-family: inherit;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display), "Playfair Display", serif;
+    color: var(--foreground);
+  }
+}
