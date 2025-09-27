@@ -8,6 +8,8 @@ Server actions for collection CRUD operations live here along with nested editor
   - `createCollectionAction` validates plan limits, generates unique slugs, and inserts new collections.
   - `updateCollectionDetailsAction` updates titles/descriptions/public state, maintains slug uniqueness, and revalidates dashboard + public paths.
   - `deleteCollectionAction` removes a collection and revalidates dependent routes.
+  - `setViewStatusAction` upserts entries in `view_logs` so client components can track Watched/Watching/Want states and revalidates `/app/history`.
+  - `uploadCollectionCoverAction` stores cover images in the `covers` storage bucket and delegates to `updateCollectionDetailsAction` to persist the URL + trigger revalidation.
   - Helpers load the active profile and handle revalidation when visibility changes.
 
 ## Dependencies

@@ -9,7 +9,11 @@ This folder contains the Supabase SQL migration (`supabase.sql`) that establishe
   - `collections` with slug history, lowercase enforcement, and publication flags.
   - `collection_items` linking collections to TMDB titles with positional ordering.
   - `movies` cache for TMDB payloads, including fallback poster metadata.
-  - `tmdb_rate_limit` (implied via rate limit logic) plus helper trigger functions.
+  - `view_logs` for per-user watch statuses (used by Day 2 logging UI).
+  - `subscriptions` tracking Stripe subscription ids, status, and plan metadata.
+  - `stripe_webhook_events` for webhook idempotency.
+  - `tmdb_rate_limit` shared bucket supporting TMDB proxy and export rate limiting.
+  - Storage bootstrap that upserts a public `covers` bucket for collection cover uploads.
   - Helper functions `set_updated_at`, `collections_slug_history`, and `slug_lowercase`.
 
 ## Operational Notes

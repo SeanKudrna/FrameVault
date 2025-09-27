@@ -5,7 +5,9 @@ This route group represents the authenticated product shell. Requests hitting `/
 
 ## Key Files
 - `layout.tsx` ensures the user is authenticated, loads or creates their `profiles` row, and wraps children in `AppShell` (sidebar navigation + sign-out controls).
+- `actions.ts` exposes shared server actions such as the Supabase-backed `signOutAction` used by the client shell.
 - `app/page.tsx` loads the signed-in user's collections from Supabase and renders `CollectionsDashboard` with plan gating metadata.
+- `app/history/page.tsx` queries `view_logs`, joins cached TMDB metadata, and renders the viewing timeline grouped by month.
 - `collections/actions.ts` exposes server actions for creating, updating, and deleting collections with slug management, plan enforcement, and revalidation of relevant routes.
 - `settings/actions.ts` provides the profile update server action used by the profile settings form.
 

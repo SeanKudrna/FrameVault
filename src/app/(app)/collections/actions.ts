@@ -1,5 +1,6 @@
 "use server";
 
+import { Buffer } from "node:buffer";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { ApiError } from "@/lib/api";
@@ -8,7 +9,7 @@ import { ensureUniqueSlug } from "@/lib/slugs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Collection, Database, Profile } from "@/lib/supabase/types";
+import type { Collection, Database, Profile, WatchStatus } from "@/lib/supabase/types";
 
 /**
  * Payload used when creating a new collection from the dashboard.
@@ -120,11 +121,15 @@ export async function updateCollectionDetailsAction({
   title,
   description,
   isPublic,
+  coverImageUrl,
+  theme,
 }: {
   collectionId: string;
   title?: string;
   description?: string | null;
   isPublic?: boolean;
+  coverImageUrl?: string | null;
+  theme?: Record<string, unknown> | null;
 }) {
   const { profile, supabase, userId } = await getProfileOrThrow();
 
@@ -164,6 +169,20 @@ export async function updateCollectionDetailsAction({
 
   if (typeof isPublic === "boolean") {
     updates.is_public = isPublic;
+  }
+
+  if (coverImageUrl !== undefined) {
+    if (profile.plan === "free") {
+      throw new ApiError("plan_limit", "Upgrade to Plus to customize covers", 403);
+    }
+    updates.cover_image_url = coverImageUrl;
+  }
+
+  if (theme !== undefined) {
+    if (profile.plan === "free") {
+      throw new ApiError("plan_limit", "Upgrade to Plus to customize themes", 403);
+    }
+    updates.theme = theme;
   }
 
   if (Object.keys(updates).length === 0) {
@@ -223,6 +242,101 @@ export async function deleteCollectionAction(collectionId: string) {
     revalidatePath(`/c/${profile.username}/${existing.slug}`);
   }
   return { ok: true } as const;
+}
+
+interface SetViewStatusInput {
+  tmdbId: number;
+  status: WatchStatus | null;
+  watchedAt?: string | null;
+}
+
+/**
+ * Sets or clears the user's view status for a TMDB title. Persists to `view_logs`.
+ */
+export async function setViewStatusAction({ tmdbId, status, watchedAt }: SetViewStatusInput) {
+  if (!Number.isFinite(tmdbId)) {
+    throw new ApiError("validation_error", "A valid tmdbId is required", 400);
+  }
+
+  const { profile, supabase } = await getProfileOrThrow();
+
+  if (!status) {
+    const { error } = await supabase
+      .from("view_logs")
+      .delete()
+      .eq("user_id", profile.id)
+      .eq("tmdb_id", tmdbId);
+
+    if (error) throw error;
+  } else {
+    const payload = {
+      user_id: profile.id,
+      tmdb_id: tmdbId,
+      status,
+      watched_at: status === "watched" ? watchedAt ?? new Date().toISOString() : null,
+    };
+
+    const { error } = await supabase
+      .from("view_logs")
+      .upsert(payload, { onConflict: "user_id, tmdb_id" });
+
+    if (error) throw error;
+  }
+
+  revalidatePath("/app/history");
+  return { ok: true } as const;
+}
+
+/**
+ * Uploads a collection cover image to Supabase storage and persists the public URL.
+ */
+export async function uploadCollectionCoverAction(formData: FormData) {
+  const collectionId = formData.get("collectionId");
+  const file = formData.get("file");
+
+  if (!collectionId || typeof collectionId !== "string") {
+    throw new ApiError("validation_error", "collectionId is required", 400);
+  }
+
+  if (!(file instanceof File)) {
+    throw new ApiError("validation_error", "A file upload is required", 400);
+  }
+
+  if (!file.type.startsWith("image/")) {
+    throw new ApiError("validation_error", "Cover images must be an image file", 400);
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new ApiError("validation_error", "Cover images must be 5MB or smaller", 400);
+  }
+
+  const { profile } = await getProfileOrThrow();
+  if (profile.plan === "free") {
+    throw new ApiError("plan_limit", "Upgrade to Plus to customize covers", 403);
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const extension = file.type === "image/png" ? "png" : "jpg";
+  const storagePath = `${profile.id}/${collectionId}-${Date.now()}.${extension}`;
+
+  const service = getSupabaseServiceRoleClient();
+  const { error: uploadError } = await service.storage.from("covers").upload(storagePath, buffer, {
+    contentType: file.type,
+    upsert: true,
+  });
+
+  if (uploadError) throw uploadError;
+
+  const { data: publicUrlData } = service.storage.from("covers").getPublicUrl(storagePath);
+  const publicUrl = publicUrlData?.publicUrl ?? null;
+  if (!publicUrl) {
+    throw new ApiError("upload_failed", "Unable to resolve cover URL", 500);
+  }
+
+  await updateCollectionDetailsAction({ collectionId, coverImageUrl: publicUrl });
+
+  return { url: publicUrl } as const;
 }
 
 /**

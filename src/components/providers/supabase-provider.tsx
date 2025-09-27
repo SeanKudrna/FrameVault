@@ -16,6 +16,7 @@ import {
 } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { signOutAction } from "@/app/(app)/actions";
 import type { Database, Profile } from "@/lib/supabase/types";
 
 /**
@@ -176,11 +177,23 @@ export function SupabaseProvider({
   }, [supabase]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    try {
+      await signOutAction();
+    } catch (error) {
+      console.error("Server sign out failed", error);
+    }
+
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Client sign out failed", error);
+    }
+
     setSession(null);
     setProfile(null);
     router.replace("/");
-  }, [supabase, router]);
+    router.refresh();
+  }, [router, supabase]);
 
   const value = useMemo(
     () => ({

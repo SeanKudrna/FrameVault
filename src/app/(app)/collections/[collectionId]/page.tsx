@@ -7,7 +7,7 @@
 import { notFound, redirect } from "next/navigation";
 import { CollectionEditor } from "@/components/collections/collection-editor";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Profile, Movie } from "@/lib/supabase/types";
+import type { Profile, Movie, WatchStatus } from "@/lib/supabase/types";
 import type { CollectionItemWithMovie } from "@/types/collection";
 
 /**
@@ -49,7 +49,7 @@ export default async function CollectionEditorPage({ params }: PageParams) {
   const collectionResponse = await supabase
     .from("collections")
     .select(
-      "id, title, slug, description, previous_slugs, is_public, created_at, updated_at, owner_id, collection_items(id, tmdb_id, position, note, rating, added_at)"
+      "id, title, slug, description, previous_slugs, is_public, created_at, updated_at, owner_id, cover_image_url, theme, collection_items(id, tmdb_id, position, note, rating, added_at)"
     )
     .eq("id", collectionId)
     .maybeSingle();
@@ -73,6 +73,20 @@ export default async function CollectionEditorPage({ params }: PageParams) {
     if (moviesResponse.error) throw moviesResponse.error;
     for (const movie of moviesResponse.data ?? []) {
       moviesMap.set(movie.tmdb_id, movie);
+    }
+  }
+
+  const viewLogMap = new Map<number, { status: WatchStatus; watched_at: string | null }>();
+  if (tmdbIds.length > 0) {
+    const viewLogResponse = await supabase
+      .from("view_logs")
+      .select("tmdb_id, status, watched_at")
+      .eq("user_id", user.id)
+      .in("tmdb_id", tmdbIds);
+
+    if (viewLogResponse.error) throw viewLogResponse.error;
+    for (const log of viewLogResponse.data ?? []) {
+      viewLogMap.set(log.tmdb_id, { status: log.status as WatchStatus, watched_at: log.watched_at });
     }
   }
 
@@ -103,6 +117,8 @@ export default async function CollectionEditorPage({ params }: PageParams) {
         note: item.note,
         rating: item.rating,
         added_at: item.added_at,
+        viewStatus: viewLogMap.get(item.tmdb_id)?.status ?? null,
+        watchedAt: viewLogMap.get(item.tmdb_id)?.watched_at ?? null,
         movie: movie
           ? {
               tmdbId: movie.tmdb_id,
@@ -132,6 +148,8 @@ export default async function CollectionEditorPage({ params }: PageParams) {
         is_public: collection.is_public,
         created_at: collection.created_at,
         updated_at: collection.updated_at,
+        cover_image_url: collection.cover_image_url ?? null,
+        theme: (collection.theme as Record<string, unknown> | null) ?? null,
       }}
       profile={profileResponse.data as Profile}
       items={mappedItems}

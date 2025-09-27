@@ -8,7 +8,8 @@ Renders public, read-only collection pages such as `/c/:username/:slug`. These p
   - Loads the profile by username (case-insensitive).
   - Fetches the targeted collection, optionally including `collection_items` for display.
   - Handles historic slug redirects and optional `?id=` query fallback.
-  - Generates SEO metadata (OpenGraph/Twitter) and renders movie cards using `PosterImage`.
+  - Generates SEO metadata (OpenGraph/Twitter), renders hero cover imagery, and surfaces share actions via `PublicShareActions`.
+  - Displays curator info (username, total films, last updated) and renders movie cards using `PosterImage`.
   - Redirects or returns 404 when the collection is not public or missing.
 
 ## Integration Notes
@@ -17,4 +18,4 @@ Renders public, read-only collection pages such as `/c/:username/:slug`. These p
 
 ## Update Protocol
 - Record any new query parameters, layout components, or SEO logic changes here.
-- When the public view exposes additional data (notes, ratings, theming), update this briefing and dependent component documentation accordingly.
+- When the public view exposes additional data (notes, ratings, theming, share UI), update this briefing and dependent component documentation accordingly.

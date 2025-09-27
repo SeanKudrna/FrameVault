@@ -8,6 +8,7 @@ This dynamic route serves the authenticated collection editor (`/collections/:co
   - Ensures the user is signed in and has an initialized profile.
   - Loads the requested collection, verifying ownership and pulling item rows.
   - Fetches cached TMDB movie metadata to enrich items (overview, posters, vote average).
+  - Pulls `cover_image_url`, `theme`, and per-movie view status (`view_logs`) so the editor can render customization controls and status pills.
   - Maps results into `CollectionItemWithMovie` objects consumed by `CollectionEditor`.
   - Redirects or 404s when access rules fail.
 

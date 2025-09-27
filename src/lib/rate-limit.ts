@@ -1,7 +1,6 @@
 /**
- * Shared rate limiting utilities for TMDB proxy routes. All counters are stored
- * inside Supabase so that multiple server instances share the same view of
- * request usage.
+ * Shared rate limiting utilities for API routes (TMDB proxy + exports). All
+ * counters live in Supabase so multiple server instances see the same usage.
  */
 
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
@@ -35,7 +34,7 @@ interface RateLimitActor {
  * Any unexpected Supabase error is rethrown to surface infrastructure issues
  * loudly.
  */
-export async function enforceRateLimit(bucket: "search" | "movie", actors: RateLimitActor[]) {
+export async function enforceRateLimit(bucket: "search" | "movie" | "export", actors: RateLimitActor[]) {
   const supabase = getSupabaseServiceRoleClient();
   const now = Date.now();
   const windowStart = new Date(Math.floor(now / WINDOW_MS) * WINDOW_MS);

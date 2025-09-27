@@ -3,13 +3,17 @@
  * metadata generation, and rendering of cached TMDB data.
  */
 
+import Image from "next/image";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CalendarDays, Film, Sparkles } from "lucide-react";
 import { getServerEnv } from "@/env";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database, Movie } from "@/lib/supabase/types";
 import { PosterImage } from "@/components/media/poster-image";
+import { PublicShareActions } from "@/components/collections/public-share-actions";
+import { extractThemeId, getThemeConfig } from "@/lib/themes";
 
 /**
  * Params and search params provided to the public collection routes.
@@ -49,6 +53,7 @@ interface PublicCollectionRow {
   is_public: boolean;
   updated_at: string;
   cover_image_url: string | null;
+  theme: Record<string, unknown> | null;
   collection_items?: CollectionItemRow[];
 }
 
@@ -99,7 +104,7 @@ async function loadPublicCollection({
   }
 
   const baseSelect =
-    "id, title, slug, description, previous_slugs, is_public, updated_at, cover_image_url";
+    "id, title, slug, description, previous_slugs, is_public, updated_at, cover_image_url, theme";
   const collectionSelect = includeItems
     ? `${baseSelect}, collection_items(position, note, tmdb_id)`
     : baseSelect;
@@ -279,54 +284,139 @@ export default async function PublicCollectionPage({ params, searchParams }: Pag
     })
     .sort((a, b) => a.position - b.position);
 
-  return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-10 px-6 py-16">
-      <header className="space-y-4 text-center">
-        <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Curated by {profile.display_name ?? profile.username}</p>
-        <h1 className="text-4xl font-semibold text-slate-100">{collection.title}</h1>
-        {collection.description ? <p className="text-sm text-slate-300">{collection.description}</p> : null}
-        <p className="text-xs text-slate-500">Last updated {new Date(collection.updated_at).toLocaleDateString()}</p>
-      </header>
+  const themeConfig = getThemeConfig(extractThemeId(collection.theme));
 
-      <section className="space-y-6">
-        {mappedItems.map((item) => (
-          <article
-            key={item.id}
-            className="flex flex-col gap-4 rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_70px_-60px_rgba(15,23,42,0.9)] sm:flex-row"
-          >
-            <div className="relative h-48 w-full flex-shrink-0 overflow-hidden rounded-2xl sm:w-40">
-              <PosterImage
-                src={item.movie.posterUrl}
-                fallbackSrc={item.movie.fallbackPosterUrl ?? null}
-                alt={item.movie.title}
-                sizes="(max-width: 640px) 100vw, 160px"
-                tmdbId={item.movie.tmdbId}
-              />
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-800/70 bg-slate-900/70 text-sm text-indigo-200">
-                  {item.position + 1}
-                </span>
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-100">{item.movie.title}</h2>
-                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{item.movie.releaseYear ?? ""}</p>
-                </div>
-              </div>
-              {item.movie.overview ? <p className="text-sm text-slate-300">{item.movie.overview}</p> : null}
-              {item.note ? (
-                <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4 text-sm text-slate-200">
-                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Curator note</p>
-                  <p>{item.note}</p>
-                </div>
-              ) : null}
-            </div>
-          </article>
-        ))}
-        {mappedItems.length === 0 ? (
-          <p className="text-center text-sm text-slate-400">This collection is warming up. Check back soon.</p>
+  const env = getServerEnv();
+  const siteBase = env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  const shareUrl = `${siteBase}/c/${profile.username}/${collection.slug}`;
+  const lastUpdated = new Date(collection.updated_at).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const totalItems = mappedItems.length;
+  const accentColor = themeConfig?.accent ?? undefined;
+  const accentSoft = themeConfig ? `${themeConfig.accent}22` : undefined;
+
+  return (
+    <div className="min-h-screen bg-slate-950">
+      <div
+        className="relative h-[260px] w-full overflow-hidden bg-slate-900/50 sm:h-[320px]"
+        style={
+          themeConfig
+            ? {
+                backgroundImage: `linear-gradient(135deg, ${themeConfig.gradient.from}, ${themeConfig.gradient.via}, ${themeConfig.gradient.to})`,
+              }
+            : undefined
+        }
+      >
+        {collection.cover_image_url ? (
+          <Image
+            src={collection.cover_image_url}
+            alt={`${collection.title} cover`}
+            fill
+            priority
+            className="object-cover"
+            sizes="100vw"
+          />
         ) : null}
-      </section>
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/10 via-slate-950/60 to-slate-950" />
+      </div>
+
+      <div className="relative -mt-24 pb-16 sm:-mt-32">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6">
+          <header className="space-y-6 rounded-3xl border border-slate-800/70 bg-slate-950/80 p-8 shadow-[0_40px_160px_-100px_rgba(15,23,42,0.9)] backdrop-blur">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-3 text-left">
+                <p
+                  className="text-xs uppercase tracking-[0.24em] text-indigo-200"
+                  style={{ color: accentColor ?? undefined }}
+                >
+                  Curated by {profile.display_name ?? profile.username}
+                </p>
+                <h1 className="text-balance text-4xl font-semibold text-slate-100 sm:text-5xl">
+                  {collection.title}
+                </h1>
+                {collection.description ? (
+                  <p className="max-w-2xl text-sm text-slate-300">{collection.description}</p>
+                ) : null}
+              </div>
+            <PublicShareActions
+              shareUrl={shareUrl}
+              accentColor={themeConfig?.accent}
+              accentForeground={themeConfig?.accentForeground}
+            />
+          </div>
+
+          <div className="flex flex-col gap-4 rounded-2xl border border-slate-800/70 bg-slate-900/60 p-5 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-800/70"
+                style={{ backgroundColor: accentSoft, color: accentColor }}
+              >
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-100">{profile.display_name ?? profile.username}</p>
+                <p className="text-xs text-slate-500">@{profile.username}</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 text-xs text-slate-400 sm:flex-row sm:items-center sm:gap-6">
+              <div className="inline-flex items-center gap-2">
+                <Film size={16} style={{ color: accentColor ?? undefined }} />
+                <span>{totalItems} {totalItems === 1 ? "film" : "films"}</span>
+              </div>
+              <div className="inline-flex items-center gap-2">
+                <CalendarDays size={16} style={{ color: accentColor ?? undefined }} />
+                <span>Updated {lastUpdated}</span>
+              </div>
+            </div>
+            </div>
+          </header>
+
+          <section className="space-y-6">
+            {mappedItems.map((item) => (
+              <article
+                key={item.id}
+                className="flex flex-col gap-4 rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_70px_-60px_rgba(15,23,42,0.9)] sm:flex-row"
+              >
+                <div className="relative h-56 w-full flex-shrink-0 overflow-hidden rounded-2xl sm:h-48 sm:w-40">
+                  <PosterImage
+                    src={item.movie.posterUrl}
+                    fallbackSrc={item.movie.fallbackPosterUrl ?? null}
+                    alt={item.movie.title}
+                    sizes="(max-width: 640px) 100vw, 160px"
+                    tmdbId={item.movie.tmdbId}
+                  />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-800/70 bg-slate-900/70 text-sm text-indigo-200">
+                      {item.position + 1}
+                    </span>
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-100">{item.movie.title}</h2>
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{item.movie.releaseYear ?? ""}</p>
+                    </div>
+                  </div>
+                  {item.movie.overview ? <p className="text-sm text-slate-300">{item.movie.overview}</p> : null}
+                  {item.note ? (
+                    <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4 text-sm text-slate-200">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Curator note</p>
+                      <p>{item.note}</p>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+            {mappedItems.length === 0 ? (
+              <p className="rounded-3xl border border-dashed border-slate-800/70 bg-slate-950/60 p-12 text-center text-sm text-slate-400">
+                This collection is warming up. Check back soon.
+              </p>
+            ) : null}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
