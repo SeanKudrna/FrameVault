@@ -9,7 +9,12 @@ import { revalidatePath } from "next/cache";
 import Stripe from "stripe";
 import { apiError, apiJson } from "@/lib/api";
 import { getServerEnv } from "@/env";
-import { getPlanFromPrice, isActiveStripeStatus, resolveProfilePlan, type PaidPlan } from "@/lib/billing";
+import {
+  isActiveStripeStatus,
+  resolveProfilePlan,
+  resolveSubscriptionPlanCandidate,
+  type PaidPlan,
+} from "@/lib/billing";
 import { getStripeClient } from "@/lib/stripe";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
@@ -21,6 +26,14 @@ const relevantEvents = new Set<Stripe.Event.Type | string>([
   "customer.subscription.updated",
   "customer.subscription.deleted",
   "customer.created",
+]);
+
+const CANCELABLE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "incomplete",
 ]);
 
 function extractCustomerId(customer: Stripe.Subscription["customer"] | Stripe.Checkout.Session.Customer | Stripe.Customer | Stripe.DeletedCustomer | string | null | undefined) {
@@ -139,12 +152,45 @@ function revalidateBillingViews(username?: string | null) {
   }
 }
 
-function coerceMetadataPlan(value: unknown): PaidPlan | null {
-  return value === "pro" || value === "plus" ? (value as PaidPlan) : null;
+async function cancelOtherSubscriptions(
+  stripe: Stripe,
+  customerId: string,
+  subscriptionIdToKeep: string
+) {
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  });
+
+  for (const subscription of subscriptions.data) {
+    if (subscription.id === subscriptionIdToKeep) continue;
+    if (subscription.status === "canceled") continue;
+    if (!CANCELABLE_SUBSCRIPTION_STATUSES.has(subscription.status)) continue;
+
+    try {
+      await stripe.subscriptions.cancel(subscription.id);
+    } catch (error) {
+      const code =
+        typeof error === "object" && error && "code" in error
+          ? (error as { code?: string }).code
+          : undefined;
+      if (code === "resource_missing") {
+        console.warn(
+          "Stale subscription already canceled",
+          subscription.id
+        );
+        continue;
+      }
+      console.error("Failed to cancel stale subscription", subscription.id, error);
+      throw error;
+    }
+  }
 }
 
 async function handleSubscriptionEvent(
   service: SupabaseClient<Database>,
+  stripe: Stripe,
   subscription: Stripe.Subscription
 ) {
   const userId = subscription.metadata?.supabase_user_id ?? null;
@@ -153,18 +199,25 @@ async function handleSubscriptionEvent(
     return;
   }
 
-  const priceId = subscription.items.data[0]?.price?.id ?? null;
-  let plan = getPlanFromPrice(priceId);
-  if (!plan) {
-    plan = coerceMetadataPlan(subscription.metadata?.plan);
+  const status = subscription.status;
+  const { plan: resolvedPlan, source: planSource } = resolveSubscriptionPlanCandidate(subscription);
+
+  if (!resolvedPlan && process.env.NODE_ENV !== "production") {
+    console.warn(
+      "Stripe subscription did not expose a recognizable plan",
+      subscription.id,
+      { status, planSource }
+    );
   }
 
-  const status = subscription.status;
   const currentPeriodEnd = subscription.current_period_end
     ? new Date(subscription.current_period_end * 1000).toISOString()
     : null;
   const customerId = extractCustomerId(subscription.customer);
-  const effectivePlan = resolveProfilePlan(status, plan);
+  const effectivePlan = resolveProfilePlan(status, resolvedPlan, {
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    endedAt: subscription.ended_at,
+  });
 
   const { data: profileRow } = await service
     .from("profiles")
@@ -177,7 +230,7 @@ async function handleSubscriptionEvent(
     userId,
     customerId,
     subscriptionId: subscription.id,
-    plan: plan ?? "free",
+    plan: resolvedPlan ?? "free",
     status,
     currentPeriodEnd,
   });
@@ -187,6 +240,15 @@ async function handleSubscriptionEvent(
   }
 
   await updateProfilePlan(service, userId, effectivePlan, customerId);
+
+  if (customerId && subscription.id && isActiveStripeStatus(status)) {
+    try {
+      await cancelOtherSubscriptions(stripe, customerId, subscription.id);
+    } catch (error) {
+      console.error("Failed to enforce single active subscription", error);
+      throw error;
+    }
+  }
   revalidateBillingViews(profileRow?.username ?? null);
 }
 
@@ -259,9 +321,14 @@ export async function POST(request: NextRequest) {
             : session.subscription?.id ?? null;
         if (subscriptionId) {
           const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-            expand: ["items.data.price"],
+            expand: [
+              "items.data.price",
+              "items.data.plan",
+              "pending_update.subscription_items.data.price",
+              "pending_update.subscription_items.data.plan",
+            ],
           });
-          await handleSubscriptionEvent(service, subscription);
+          await handleSubscriptionEvent(service, stripe, subscription);
         }
         const customerId = extractCustomerId(session.customer);
         const userId = session.metadata?.supabase_user_id ?? null;
@@ -278,7 +345,7 @@ export async function POST(request: NextRequest) {
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
-        await handleSubscriptionEvent(service, subscription);
+        await handleSubscriptionEvent(service, stripe, subscription);
         break;
       }
       case "customer.created": {

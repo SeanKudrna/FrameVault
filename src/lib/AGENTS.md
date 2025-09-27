@@ -7,7 +7,7 @@ Shared domain logic and service helpers live here. Modules expose reusable utili
 - `api.ts`: standardized JSON responses and `ApiError` class for server actions/routes.
 - `auth.ts`: helpers for retrieving verified sessions (via `auth.getUser()`), profiles, and ensuring Supabase profile records exist.
 - `plan.ts`: plan limit constants plus `canCreateCollection` and `planGateMessage` helpers.
-- `billing.ts`: Stripe price/plan mapping helpers and subscription status evaluation (`getPriceIdForPlan`, `resolveProfilePlan`).
+- `billing.ts`: Stripe price/plan mapping helpers, subscription item analysis (`resolveSubscriptionPlanCandidate`), and effective plan evaluation (`resolveProfilePlan`, `pickHigherPriorityPlan`).
 - `stripe.ts`: lazily initialised Stripe SDK client configured from env vars.
 - `themes.ts`: shared collection theme catalogue plus helpers for resolving theme IDs stored in the database.
 - `export.ts`: loads collections/items for data export (JSON/CSV) with movie metadata enrichment.

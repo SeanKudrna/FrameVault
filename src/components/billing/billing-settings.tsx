@@ -142,7 +142,7 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
               {periodEnd ? ` • Renews ${periodEnd}` : null}
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
             {profile.plan !== "free" ? (
               <Button
                 onClick={handlePortal}
@@ -154,13 +154,23 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
                 Manage billing
               </Button>
             ) : null}
-            {profile.plan !== "pro" ? (
+            {profile.plan === "free" ? (
               <Button
-                onClick={() => handleCheckout(profile.plan === "free" ? "plus" : "pro")}
+                onClick={() => handleCheckout("plus")}
                 disabled={loadingPlan !== null}
                 className="min-w-[160px]"
               >
-                Upgrade {profile.plan === "free" ? "to Plus" : "to Pro"}
+                Upgrade to Plus
+                <ArrowRight size={18} className="opacity-80" />
+              </Button>
+            ) : null}
+            {profile.plan !== "pro" ? (
+              <Button
+                onClick={() => handleCheckout("pro")}
+                disabled={loadingPlan !== null}
+                className="min-w-[160px]"
+              >
+                Upgrade to Pro
                 <ArrowRight size={18} className="opacity-80" />
               </Button>
             ) : null}

@@ -857,7 +857,7 @@ interface SortableMovieCardProps {
   onSaveNote: (note: string) => void;
   onUpdateStatus: (status: WatchStatus | null, options?: { watchedAt?: string | null }) => Promise<void>;
   plan: Profile["plan"];
-  preferredRegion: string;
+  preferredRegion: string | null | undefined;
 }
 
 /**
@@ -1088,6 +1088,7 @@ const SortableMovieCard = memo(function SortableMovieCard({
   plan,
   preferredRegion,
 }: SortableMovieCardProps) {
+  const region = (preferredRegion?.trim() || "US").toUpperCase();
   const {
     attributes,
     listeners,
@@ -1100,6 +1101,25 @@ const SortableMovieCard = memo(function SortableMovieCard({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const [dragHandleDescribedBy, setDragHandleDescribedBy] = useState<string | undefined>(
+    () => (attributes?.["aria-describedby"] as string | undefined) ?? undefined
+  );
+
+  useEffect(() => {
+    const describedBy = attributes?.["aria-describedby"] as string | undefined;
+    if (describedBy && describedBy !== dragHandleDescribedBy) {
+      setDragHandleDescribedBy(describedBy);
+    }
+  }, [attributes, dragHandleDescribedBy]);
+
+  const dragHandleProps = useMemo(() => {
+    const { ["aria-describedby"]: _ignored, ...restAttributes } = (attributes ?? {}) as Record<string, unknown>;
+    return {
+      ...restAttributes,
+      ...(listeners ?? {}),
+      ...(dragHandleDescribedBy ? { ["aria-describedby"]: dragHandleDescribedBy } : {}),
+    };
+  }, [attributes, listeners, dragHandleDescribedBy]);
   const [note, setNote] = useState(item.note ?? "");
   const [status, setStatus] = useState<WatchStatus | null>(item.viewStatus ?? null);
   const [watchedAt, setWatchedAt] = useState<string | null>(item.watchedAt ?? null);
@@ -1116,7 +1136,7 @@ const SortableMovieCard = memo(function SortableMovieCard({
     setProvidersError(null);
     try {
       const response = await fetch(
-        `/api/tmdb/providers?movieId=${item.tmdb_id}&region=${preferredRegion}`
+        `/api/tmdb/providers?movieId=${item.tmdb_id}&region=${region}`
       );
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -1130,7 +1150,7 @@ const SortableMovieCard = memo(function SortableMovieCard({
     } finally {
       setProvidersLoading(false);
     }
-  }, [item.tmdb_id, preferredRegion, providers, providersLoading]);
+  }, [item.tmdb_id, region, providers, providersLoading]);
 
   useEffect(() => {
     setNote(item.note ?? "");
@@ -1183,10 +1203,7 @@ const SortableMovieCard = memo(function SortableMovieCard({
         watchedAt={watchedAt}
         onUpdateStatus={handleStatusChange}
         statusPending={statusPending}
-        dragHandleProps={{
-          ...attributes,
-          ...listeners,
-        }}
+        dragHandleProps={dragHandleProps}
       />
       {isPro ? (
         <div className="border-t border-slate-800/60 pt-4">
@@ -1204,7 +1221,7 @@ const SortableMovieCard = memo(function SortableMovieCard({
             <span className="flex items-center gap-2">
               <Tv size={16} />
               Streaming availability
-              <span className="text-xs text-slate-500">Region {preferredRegion.toUpperCase()}</span>
+              <span className="text-xs text-slate-500">Region {region}</span>
             </span>
             <ChevronDown
               size={16}
@@ -1308,6 +1325,7 @@ function MovieCardBody({
             alt={item.movie?.title ?? "Poster"}
             sizes="120px"
             tmdbId={item.movie?.tmdbId ?? null}
+            className="h-full w-full"
           />
         </div>
         <div className="flex-1 space-y-2">

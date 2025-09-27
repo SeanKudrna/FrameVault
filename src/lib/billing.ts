@@ -17,6 +17,85 @@ export const STRIPE_PRICE_IDS = {
 
 export type PaidPlan = Exclude<Plan, "free">;
 
+const PLAN_RANK: Record<Plan, number> = {
+  free: 0,
+  plus: 1,
+  pro: 2,
+};
+
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "incomplete",
+]);
+
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+  "canceled",
+  "incomplete_expired",
+]);
+
+const METADATA_PLAN_KEYS = ["plan", "target_plan", "framevault_plan", "requested_plan", "desired_plan"] as const;
+
+function coercePlan(value: unknown): PaidPlan | null {
+  if (value === "plus" || value === "pro") {
+    return value;
+  }
+  return null;
+}
+
+function readMetadataPlan(metadata: Stripe.Metadata | null | undefined): PaidPlan | null {
+  if (!metadata) return null;
+  for (const key of METADATA_PLAN_KEYS) {
+    const candidate = coercePlan(metadata[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function readPlanFromPrice(price: Stripe.Price | null | undefined): PaidPlan | null {
+  if (!price) return null;
+  const pricePlan = getPlanFromPrice(price.id);
+  if (pricePlan) return pricePlan;
+  return readMetadataPlan(price.metadata);
+}
+
+function isDeletedSubscriptionItem(
+  item: Stripe.SubscriptionItem | Stripe.DeletedSubscriptionItem
+): item is Stripe.DeletedSubscriptionItem {
+  return "deleted" in item && Boolean(item.deleted);
+}
+
+function resolvePlanFromSubscriptionItems(items: Stripe.SubscriptionItem[] | undefined): PaidPlan | null {
+  if (!items || items.length === 0) {
+    return null;
+  }
+
+  const sorted = [...items].sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+
+  for (const item of sorted) {
+    if (isDeletedSubscriptionItem(item)) continue;
+    if (typeof item.quantity === "number" && item.quantity === 0) continue;
+    const plan = readPlanFromPrice(item.price);
+    if (plan) return plan;
+  }
+
+  for (const item of sorted) {
+    if (isDeletedSubscriptionItem(item)) continue;
+    if (typeof item.quantity === "number" && item.quantity === 0) continue;
+    const plan =
+      readMetadataPlan(item.metadata) ??
+      readMetadataPlan(item.price?.metadata) ??
+      (item.plan && "metadata" in item.plan ? readMetadataPlan(item.plan.metadata) : null);
+    if (plan) return plan;
+  }
+
+  return null;
+}
+
 /**
  * Resolves the Stripe price identifier for a paid plan.
  */
@@ -35,12 +114,6 @@ export function getPlanFromPrice(priceId: string | null | undefined): PaidPlan |
   return entry[0] as PaidPlan;
 }
 
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status | "trialing">([
-  "active",
-  "trialing",
-  "past_due",
-]);
-
 /**
  * Returns whether a Stripe subscription status should be considered active for
  * gating purposes. `past_due` remains active to avoid prematurely locking
@@ -51,13 +124,95 @@ export function isActiveStripeStatus(status: string | null | undefined) {
   return ACTIVE_SUBSCRIPTION_STATUSES.has(status as Stripe.Subscription.Status);
 }
 
+export interface ResolveProfilePlanOptions {
+  cancelAtPeriodEnd?: boolean | null | undefined;
+  endedAt?: number | null | undefined;
+}
+
 /**
  * Determines the effective FrameVault plan for a profile given the Stripe
- * subscription status and underlying price.
+ * subscription status and underlying price information.
  */
-export function resolveProfilePlan(status: string | null | undefined, pricePlan: PaidPlan | null): Plan {
-  if (isActiveStripeStatus(status) && pricePlan) {
+export function resolveProfilePlan(
+  status: string | null | undefined,
+  pricePlan: PaidPlan | null,
+  options: ResolveProfilePlanOptions = {}
+): Plan {
+  if (!pricePlan) {
+    return "free";
+  }
+
+  if (!status) {
+    return "free";
+  }
+
+  if (options.endedAt) {
+    return "free";
+  }
+
+  if (TERMINAL_SUBSCRIPTION_STATUSES.has(status as Stripe.Subscription.Status)) {
+    return "free";
+  }
+
+  if (isActiveStripeStatus(status)) {
     return pricePlan;
   }
+
   return "free";
+}
+
+export type SubscriptionPlanSource = "price" | "metadata";
+
+export interface SubscriptionPlanResolution {
+  plan: PaidPlan | null;
+  source: SubscriptionPlanSource | null;
+}
+
+/**
+ * Attempts to determine the target FrameVault plan for a Stripe subscription.
+ * Prefers the newest non-deleted subscription item price before falling back to
+ * metadata hints.
+ */
+export function resolveSubscriptionPlanCandidate(
+  subscription: Stripe.Subscription
+): SubscriptionPlanResolution {
+  const items = subscription.items?.data ?? [];
+  const itemPlan = resolvePlanFromSubscriptionItems(items);
+  if (itemPlan) {
+    return { plan: itemPlan, source: "price" };
+  }
+
+  const pendingItemPlan = resolvePlanFromSubscriptionItems(
+    subscription.pending_update?.subscription_items?.data ?? []
+  );
+  if (pendingItemPlan) {
+    return { plan: pendingItemPlan, source: "price" };
+  }
+
+  const metadataPlan =
+    readMetadataPlan(subscription.metadata) ??
+    readMetadataPlan(subscription.pending_update?.metadata) ??
+    (subscription.plan && "metadata" in subscription.plan
+      ? readMetadataPlan(subscription.plan.metadata)
+      : null);
+
+  if (metadataPlan) {
+    return { plan: metadataPlan, source: "metadata" };
+  }
+
+  return { plan: null, source: null };
+}
+
+/**
+ * Chooses the higher priority plan between two options. Helpful when comparing
+ * multiple subscription snapshots. Returns the second plan when priorities
+ * match to favour the most recent signal.
+ */
+export function pickHigherPriorityPlan(current: Plan, candidate: Plan): Plan {
+  const currentRank = PLAN_RANK[current];
+  const candidateRank = PLAN_RANK[candidate];
+  if (candidateRank >= currentRank) {
+    return candidate;
+  }
+  return current;
 }
