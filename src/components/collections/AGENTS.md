@@ -11,7 +11,9 @@ Contains all UI related to managing collections: dashboards, server-action orche
 - `collection-editor.tsx`:
   - Implements the full collection editing workspace, including item reordering (drag-and-drop), TMDB search integration, note editing, and publish toggles.
   - Calls server actions (`addMovieToCollectionAction`, `removeCollectionItemAction`, `reorderCollectionItemsAction`, `updateCollectionDetailsAction`, `updateCollectionItemNoteAction`).
-  - Coordinates optimistic updates, transitions, and local error handling.
+  - Coordinates optimistic updates, plan gating, and view status toggles (Watched/Watching/Want) which sync with `setViewStatusAction` and the `/app/history` timeline.
+  - Surfaces Plus-only customization (cover uploads via `uploadCollectionCoverAction`, theme selection persisted through `updateCollectionDetailsAction`).
+- `public-share-actions.tsx`: client-side share button used on the public collection page. Attempts Web Share first, falling back to copy-to-clipboard with toast feedback.
 
 ## Integration Notes
 - Components rely on shared providers (toast, Supabase) and UI primitives.

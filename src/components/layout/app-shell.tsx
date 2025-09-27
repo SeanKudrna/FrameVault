@@ -5,7 +5,7 @@
  * sign-out controls. Client-side to access Supabase context helpers.
  */
 
-import { Film, LayoutDashboard, LogOut, Settings } from "lucide-react";
+import { CreditCard, Film, History, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,9 @@ interface AppShellProps {
  */
 const navItems = [
   { href: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/app/history", label: "History", icon: History },
   { href: "/settings/profile", label: "Profile", icon: Settings },
+  { href: "/settings/billing", label: "Billing", icon: CreditCard },
 ];
 
 /**

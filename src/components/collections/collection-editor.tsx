@@ -6,7 +6,18 @@
  * action orchestration from the client.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Image from "next/image";
+import {
+  memo,
+  startTransition as startAppTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -25,23 +36,31 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, GripVertical, Plus, Trash2, Ellipsis, CheckCircle2, PlayCircle, BookmarkPlus, XCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MovieSearchModal } from "@/components/collections/movie-search-modal";
 import { useToast } from "@/components/providers/toast-provider";
 import { PosterImage } from "@/components/media/poster-image";
+import { cn } from "@/lib/utils";
+import { COLLECTION_THEME_OPTIONS, extractThemeId, getThemeConfig } from "@/lib/themes";
+import type { CollectionThemeOption } from "@/lib/themes";
+import { PlanGate } from "@/components/plan/plan-gate";
 import {
   addMovieToCollectionAction,
   removeCollectionItemAction,
   reorderCollectionItemsAction,
   updateCollectionDetailsAction,
   updateCollectionItemNoteAction,
+  setViewStatusAction,
+  uploadCollectionCoverAction,
 } from "@/app/(app)/collections/actions";
 import type { CollectionItemWithMovie } from "@/types/collection";
 import type { MovieSummary } from "@/lib/tmdb";
-import type { Profile } from "@/lib/supabase/types";
+import type { Profile, WatchStatus } from "@/lib/supabase/types";
 
 /**
  * DOM id referenced by the drag-and-drop accessibility instructions element.
@@ -54,6 +73,88 @@ const DND_SCREEN_READER_INSTRUCTIONS = {
   draggable:
     "Press space bar to pick up an item. Use the arrow keys to move, space bar to drop, and escape to cancel.",
 } as const;
+
+const STATUS_CONFIG: Record<WatchStatus, { label: string; Icon: LucideIcon; pillClass: string; menuLabel: string }> = {
+  watched: {
+    label: "Watched",
+    Icon: CheckCircle2,
+    pillClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+    menuLabel: "Mark as watched",
+  },
+  watching: {
+    label: "Watching",
+    Icon: PlayCircle,
+    pillClass: "border-sky-500/40 bg-sky-500/10 text-sky-100",
+    menuLabel: "Mark as watching",
+  },
+  want: {
+    label: "Watchlist",
+    Icon: BookmarkPlus,
+    pillClass: "border-indigo-500/40 bg-indigo-500/10 text-indigo-100",
+    menuLabel: "Add to watchlist",
+  },
+};
+
+async function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Unable to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadImage(dataUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to load image"));
+    img.src = dataUrl;
+  });
+}
+
+async function cropImageToCover(file: File) {
+  const dataUrl = await fileToDataUrl(file);
+  const image = await loadImage(dataUrl);
+
+  const targetWidth = 1600;
+  const targetHeight = 900;
+  const targetAspect = targetWidth / targetHeight;
+  const sourceAspect = image.width / image.height;
+
+  let sx = 0;
+  let sy = 0;
+  let sWidth = image.width;
+  let sHeight = image.height;
+
+  if (sourceAspect > targetAspect) {
+    sHeight = image.height;
+    sWidth = sHeight * targetAspect;
+    sx = (image.width - sWidth) / 2;
+  } else {
+    sWidth = image.width;
+    sHeight = sWidth / targetAspect;
+    sy = (image.height - sHeight) / 2;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas context unavailable");
+  }
+  ctx.drawImage(image, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) resolve(result);
+      else reject(new Error("Unable to process image"));
+    }, "image/jpeg", 0.92);
+  });
+
+  return new File([blob], `collection-cover-${Date.now()}.jpg`, { type: "image/jpeg" });
+}
 
 /**
  * Props required to render the collection editor.
@@ -68,6 +169,8 @@ interface CollectionEditorProps {
     is_public: boolean;
     created_at: string;
     updated_at: string;
+    cover_image_url: string | null;
+    theme: Record<string, unknown> | null;
   };
   profile: Profile;
   items: CollectionItemWithMovie[];
@@ -95,6 +198,14 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
   const [isPublic, setIsPublic] = useState(collection.is_public);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(collection.cover_image_url);
+  const [isUploadingCover, setUploadingCover] = useState(false);
+  const [isSavingTheme, setSavingTheme] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState<CollectionThemeOption | null>(() =>
+    getThemeConfig(extractThemeId(collection.theme))
+  );
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const canCustomize = profile.plan !== "free";
 
   useEffect(() => {
     setItems(initialItems);
@@ -106,6 +217,11 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
     setDescription(collection.description ?? "");
     setIsPublic(collection.is_public);
   }, [collection.id, collection.title, collection.description, collection.is_public]);
+
+  useEffect(() => {
+    setCoverImageUrl(collection.cover_image_url);
+    setSelectedTheme(getThemeConfig(extractThemeId(collection.theme)));
+  }, [collection.cover_image_url, collection.theme]);
 
   const existingTmdbIds = useMemo(() => items.map((item) => item.tmdb_id), [items]);
   const handleAddMovie = useCallback(
@@ -293,6 +409,160 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
     [collection.id, router, startTransition, toast]
   );
 
+  const handleUpdateStatus = useCallback(
+    async (tmdbId: number, nextStatus: WatchStatus | null, options?: { watchedAt?: string | null }) => {
+      try {
+        await setViewStatusAction({
+          tmdbId,
+          status: nextStatus,
+          watchedAt: options?.watchedAt,
+        });
+
+        if (nextStatus) {
+          const copy: Record<WatchStatus, { title: string; description: string }> = {
+            watched: {
+              title: "Marked as watched",
+              description: "We'll log this screening in your history feed.",
+            },
+            watching: {
+              title: "Marked as watching",
+              description: "We'll keep this handy so you can resume later.",
+            },
+            want: {
+              title: "Saved to watchlist",
+              description: "Reach it from your history when you're ready to press play.",
+            },
+          };
+          const message = copy[nextStatus];
+          toast({ title: message.title, description: message.description, variant: "success" });
+        } else {
+          toast({
+            title: "Status cleared",
+            description: "This film is no longer tracked in your history.",
+            variant: "info",
+          });
+        }
+
+        startAppTransition(() => {
+          router.refresh();
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to update status";
+        toast({ title: "Status update failed", description: message, variant: "error" });
+        throw error;
+      }
+    },
+    [router, toast]
+  );
+
+  const handleCoverFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        toast({ title: "Unsupported file", description: "Please choose an image file.", variant: "error" });
+        event.target.value = "";
+        return;
+      }
+      if (!canCustomize) {
+        toast({ title: "Upgrade required", description: "Plus unlocks custom covers.", variant: "info" });
+        event.target.value = "";
+        return;
+      }
+
+      setUploadingCover(true);
+      try {
+        const processed = await cropImageToCover(file);
+        const formData = new FormData();
+        formData.append("collectionId", collection.id);
+        formData.append("file", processed);
+        const result = await uploadCollectionCoverAction(formData);
+        setCoverImageUrl(result.url);
+        toast({
+          title: "Cover updated",
+          description: "Your collection now has a cinematic hero image.",
+          variant: "success",
+        });
+        startAppTransition(() => {
+          router.refresh();
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to upload cover";
+        toast({ title: "Upload failed", description: message, variant: "error" });
+      } finally {
+        setUploadingCover(false);
+        event.target.value = "";
+      }
+    },
+    [canCustomize, collection.id, router, toast]
+  );
+
+  const handleCoverRemove = useCallback(() => {
+    if (!canCustomize || !coverImageUrl) return;
+    setUploadingCover(true);
+    const previous = coverImageUrl;
+    setCoverImageUrl(null);
+    updateCollectionDetailsAction({ collectionId: collection.id, coverImageUrl: null })
+      .then(() => {
+        toast({ title: "Cover removed", description: "Reverted to the default background.", variant: "info" });
+        startAppTransition(() => {
+          router.refresh();
+        });
+      })
+      .catch((error) => {
+        setCoverImageUrl(previous);
+        const message = error instanceof Error ? error.message : "Unable to remove cover";
+        toast({ title: "Remove failed", description: message, variant: "error" });
+      })
+      .finally(() => setUploadingCover(false));
+  }, [canCustomize, collection.id, coverImageUrl, router, toast]);
+
+  const handleThemeSelect = useCallback(
+    async (option: CollectionThemeOption) => {
+      if (!canCustomize) {
+        toast({ title: "Upgrade required", description: "Plus unlocks accent themes.", variant: "info" });
+        return;
+      }
+      const previous = selectedTheme;
+      setSelectedTheme(option);
+      setSavingTheme(true);
+      try {
+        await updateCollectionDetailsAction({ collectionId: collection.id, theme: { id: option.id } });
+        toast({ title: "Theme applied", description: `${option.label} is now active.`, variant: "success" });
+        startAppTransition(() => {
+          router.refresh();
+        });
+      } catch (error) {
+        setSelectedTheme(previous ?? null);
+        const message = error instanceof Error ? error.message : "Unable to update theme";
+        toast({ title: "Theme update failed", description: message, variant: "error" });
+      } finally {
+        setSavingTheme(false);
+      }
+    },
+    [canCustomize, collection.id, router, selectedTheme, toast]
+  );
+
+  const handleResetTheme = useCallback(async () => {
+    if (!canCustomize || !selectedTheme) return;
+    setSavingTheme(true);
+    const previous = selectedTheme;
+    setSelectedTheme(null);
+    try {
+      await updateCollectionDetailsAction({ collectionId: collection.id, theme: null });
+      toast({ title: "Theme reset", description: "Back to the default palette.", variant: "info" });
+      startAppTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setSelectedTheme(previous);
+      const message = error instanceof Error ? error.message : "Unable to reset theme";
+      toast({ title: "Theme update failed", description: message, variant: "error" });
+    } finally {
+      setSavingTheme(false);
+    }
+  }, [canCustomize, collection.id, router, selectedTheme, toast]);
+
   // Assemble the share URL using the browser origin when available. Falls back
   // to the configured site URL during SSR so the UI still shows a reasonable
   // link while hydrating.
@@ -302,8 +572,103 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
       : process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000") +
     `/c/${profile.username}/${collection.slug}`;
 
+  const themePreview = selectedTheme ?? getThemeConfig(extractThemeId(collection.theme));
+
   return (
     <div className="space-y-10">
+      <section className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-8 shadow-[0_20px_70px_-60px_rgba(15,23,42,0.9)]">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-semibold text-slate-100">Appearance</h2>
+            <p className="text-sm text-slate-400">Upload a cinematic cover and choose an accent palette for public pages.</p>
+          </div>
+          {!canCustomize ? (
+            <PlanGate
+              title="Unlock custom branding"
+              message="Plus members can upload cover art and theme their collections."
+              ctaLabel="Upgrade to Plus"
+              href="/settings/billing"
+            />
+          ) : (
+            <div className="space-y-6">
+              <div className="flex flex-col gap-5 lg:flex-row">
+                <div className="flex-1 space-y-3">
+                  <p className="text-sm font-semibold text-slate-200">Cover image</p>
+                  <div
+                    className="relative h-48 w-full overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-900/70"
+                    style={themePreview ? { backgroundImage: `linear-gradient(135deg, ${themePreview.gradient.from}, ${themePreview.gradient.via}, ${themePreview.gradient.to})` } : undefined}
+                  >
+                    {coverImageUrl ? (
+                      <Image src={coverImageUrl} alt="Collection cover" fill className="object-cover" sizes="(max-width: 768px) 100vw, 50vw" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-sm text-slate-500">
+                        Upload a 16:9 image for the best look
+                      </div>
+                    )}
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 to-black/30" />
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button variant="muted" onClick={() => fileInputRef.current?.click()} disabled={isUploadingCover}>
+                      {isUploadingCover ? "Uploading..." : "Upload cover"}
+                    </Button>
+                    {coverImageUrl ? (
+                      <Button variant="ghost" onClick={handleCoverRemove} disabled={isUploadingCover}>
+                        Remove cover
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-slate-200">Accent theme</p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {COLLECTION_THEME_OPTIONS.map((option) => {
+                    const isActive = selectedTheme?.id === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => handleThemeSelect(option)}
+                        disabled={isSavingTheme}
+                        className={cn(
+                          "relative overflow-hidden rounded-2xl border px-4 py-6 text-left transition focus:outline-none",
+                          isActive
+                            ? "border-indigo-400/60 ring-2 ring-indigo-400/30"
+                            : "border-slate-800/60 hover:border-indigo-400/40"
+                        )}
+                        style={{
+                          backgroundImage: `linear-gradient(135deg, ${option.gradient.from}, ${option.gradient.via}, ${option.gradient.to})`,
+                        }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-black/25 to-black/40" />
+                        <div className="relative space-y-2 text-slate-100">
+                          <p className="text-sm font-semibold">{option.label}</p>
+                          <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2 py-1 text-xs">
+                            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: option.accent }} />
+                            Accent
+                          </span>
+                          {isActive ? <span className="text-[10px] uppercase tracking-[0.24em] text-indigo-100">Selected</span> : null}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="border border-slate-800/60"
+                  onClick={handleResetTheme}
+                  disabled={isSavingTheme || !selectedTheme}
+                >
+                  Reset theme
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverFileChange} />
+      </section>
+
       <header className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-8 shadow-[0_20px_70px_-60px_rgba(15,23,42,0.9)]">
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="space-y-4">
@@ -398,6 +763,7 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
                   item={item}
                   onRemove={() => handleRemoveItem(item)}
                   onSaveNote={(note) => handleNoteSave(item, note)}
+                  onUpdateStatus={(status, options) => handleUpdateStatus(item.tmdb_id, status, options)}
                 />
               ))}
             </div>
@@ -428,12 +794,18 @@ interface SortableMovieCardProps {
   item: CollectionItemWithMovie;
   onRemove: () => void;
   onSaveNote: (note: string) => void;
+  onUpdateStatus: (status: WatchStatus | null, options?: { watchedAt?: string | null }) => Promise<void>;
 }
 
 /**
  * Sortable wrapper that wires a movie card into the DnD context.
  */
-const SortableMovieCard = memo(function SortableMovieCard({ item, onRemove, onSaveNote }: SortableMovieCardProps) {
+const SortableMovieCard = memo(function SortableMovieCard({
+  item,
+  onRemove,
+  onSaveNote,
+  onUpdateStatus,
+}: SortableMovieCardProps) {
   const {
     attributes,
     listeners,
@@ -447,10 +819,42 @@ const SortableMovieCard = memo(function SortableMovieCard({ item, onRemove, onSa
     transition,
   };
   const [note, setNote] = useState(item.note ?? "");
+  const [status, setStatus] = useState<WatchStatus | null>(item.viewStatus ?? null);
+  const [watchedAt, setWatchedAt] = useState<string | null>(item.watchedAt ?? null);
+  const [statusPending, setStatusPending] = useState(false);
 
   useEffect(() => {
     setNote(item.note ?? "");
   }, [item.note]);
+
+  useEffect(() => {
+    setStatus(item.viewStatus ?? null);
+    setWatchedAt(item.watchedAt ?? null);
+  }, [item.viewStatus, item.watchedAt]);
+
+  const handleStatusChange = useCallback(
+    async (nextStatus: WatchStatus | null, options?: { watchedAt?: string | null }) => {
+      const previousStatus = status;
+      const previousWatchedAt = watchedAt;
+      setStatus(nextStatus);
+      setWatchedAt(nextStatus === "watched" ? options?.watchedAt ?? new Date().toISOString() : null);
+      setStatusPending(true);
+      try {
+        await onUpdateStatus(nextStatus, options);
+        if (nextStatus !== "watched") {
+          setWatchedAt(null);
+        } else if (options?.watchedAt) {
+          setWatchedAt(options.watchedAt);
+        }
+      } catch {
+        setStatus(previousStatus ?? null);
+        setWatchedAt(previousWatchedAt ?? null);
+      } finally {
+        setStatusPending(false);
+      }
+    },
+    [onUpdateStatus, status, watchedAt]
+  );
 
   return (
     <div
@@ -466,6 +870,10 @@ const SortableMovieCard = memo(function SortableMovieCard({ item, onRemove, onSa
         onNoteChange={setNote}
         onRemove={onRemove}
         onSaveNote={onSaveNote}
+        viewStatus={status}
+        watchedAt={watchedAt}
+        onUpdateStatus={handleStatusChange}
+        statusPending={statusPending}
         dragHandleProps={{
           ...attributes,
           ...listeners,
@@ -488,6 +896,10 @@ interface MovieCardBodyProps {
   onSaveNote?: (note: string) => void;
   dragHandleProps?: Record<string, unknown>;
   readOnly?: boolean;
+  viewStatus?: WatchStatus | null;
+  watchedAt?: string | null;
+  onUpdateStatus?: (status: WatchStatus | null, options?: { watchedAt?: string | null }) => Promise<void>;
+  statusPending?: boolean;
 }
 
 /**
@@ -501,7 +913,32 @@ function MovieCardBody({
   onSaveNote,
   dragHandleProps,
   readOnly = false,
+  viewStatus = null,
+  watchedAt = null,
+  onUpdateStatus,
+  statusPending = false,
 }: MovieCardBodyProps) {
+  const formattedWatchedAt = useMemo(() => {
+    if (!watchedAt) return null;
+    const date = new Date(watchedAt);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }, [watchedAt]);
+
+  const statusMeta = useMemo(() => {
+    if (!viewStatus) return null;
+    const config = STATUS_CONFIG[viewStatus];
+    return {
+      ...config,
+      watchHint: viewStatus === "watched" && formattedWatchedAt ? `Watched ${formattedWatchedAt}` : null,
+    };
+  }, [formattedWatchedAt, viewStatus]);
+
+  const statusEntries = useMemo(
+    () => Object.entries(STATUS_CONFIG) as Array<[WatchStatus, (typeof STATUS_CONFIG)[WatchStatus]]>,
+    []
+  );
+
   return (
     <div className="flex gap-4">
       {dragHandleProps ? (
@@ -531,11 +968,82 @@ function MovieCardBody({
             <div>
               <p className="text-lg font-semibold text-slate-100">{item.movie?.title ?? "Untitled"}</p>
               <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{item.movie?.releaseYear ?? ""}</p>
+              {statusMeta ? (
+                <span
+                  className={cn(
+                    "mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs",
+                    statusMeta.pillClass
+                  )}
+                >
+                  <statusMeta.Icon size={16} />
+                  {statusMeta.label}
+                  {statusMeta.watchHint ? <span className="text-[10px] uppercase tracking-[0.18em] text-current/70">{statusMeta.watchHint}</span> : null}
+                </span>
+              ) : null}
             </div>
             {!readOnly ? (
-              <Button variant="ghost" size="icon" onClick={onRemove}>
-                <Trash2 size={16} />
-              </Button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <Button variant="ghost" size="icon" disabled={statusPending}>
+                    <Ellipsis size={16} />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    side="bottom"
+                    align="end"
+                    sideOffset={8}
+                    className="w-56 rounded-2xl border border-slate-800/70 bg-slate-950/90 p-2 text-sm text-slate-200 shadow-[0_16px_80px_-60px_rgba(15,23,42,1)] backdrop-blur"
+                  >
+                    <DropdownMenu.Label className="px-3 pb-1 text-xs uppercase tracking-[0.24em] text-slate-500">
+                      Status
+                    </DropdownMenu.Label>
+                    {statusEntries.map(([key, config]) => (
+                      <DropdownMenu.Item
+                        key={key}
+                        disabled={statusPending}
+                        onSelect={() => {
+                          if (key === "watched") {
+                            onUpdateStatus?.("watched", { watchedAt: new Date().toISOString() });
+                          } else {
+                            onUpdateStatus?.(key);
+                          }
+                        }}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 outline-none transition",
+                          viewStatus === key
+                            ? "bg-indigo-500/15 text-indigo-100"
+                            : "hover:bg-slate-900/80 hover:text-slate-100"
+                        )}
+                      >
+                        <config.Icon size={16} />
+                        <span>{config.menuLabel}</span>
+                        {viewStatus === key ? <span className="ml-auto text-[10px] uppercase tracking-[0.24em] text-indigo-200">Active</span> : null}
+                      </DropdownMenu.Item>
+                    ))}
+                    <DropdownMenu.Item
+                      disabled={!viewStatus || statusPending}
+                      onSelect={() => onUpdateStatus?.(null)}
+                      className={cn(
+                        "mt-1 flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs outline-none transition",
+                        !viewStatus ? "text-slate-600" : "hover:bg-slate-900/80 hover:text-slate-100"
+                      )}
+                    >
+                      <XCircle size={16} />
+                      Clear status
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator className="my-2 h-px bg-slate-800/60" />
+                    <DropdownMenu.Item
+                      disabled={statusPending}
+                      onSelect={onRemove}
+                      className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-rose-300 outline-none transition hover:bg-rose-500/10"
+                    >
+                      <Trash2 size={16} />
+                      Remove from collection
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             ) : null}
           </div>
           {readOnly ? (

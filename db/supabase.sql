@@ -14,6 +14,21 @@ begin
 end;
 $$;
 
+-- Storage bucket for collection covers
+insert into storage.buckets (id, name, public, allowed_mime_types, file_size_limit)
+values (
+  'covers',
+  'covers',
+  true,
+  array['image/jpeg', 'image/png', 'image/webp'],
+  5 * 1024 * 1024
+)
+on conflict (id) do update
+set
+  public = excluded.public,
+  allowed_mime_types = excluded.allowed_mime_types,
+  file_size_limit = excluded.file_size_limit;
+
 -- Profiles table mirrors auth.users
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -196,6 +211,14 @@ create trigger set_subscriptions_updated_at
 before update on public.subscriptions
 for each row execute function public.set_updated_at();
 
+-- Track processed Stripe webhook events for idempotency
+create table if not exists public.stripe_webhook_events (
+  id bigserial primary key,
+  event_id text not null unique,
+  event_type text not null,
+  processed_at timestamptz not null default now()
+);
+
 -- Enable RLS
 alter table public.profiles enable row level security;
 alter table public.collections enable row level security;
@@ -205,6 +228,7 @@ alter table public.view_logs enable row level security;
 alter table public.comments enable row level security;
 alter table public.follows enable row level security;
 alter table public.subscriptions enable row level security;
+alter table public.stripe_webhook_events enable row level security;
 
 -- RLS policies
 drop policy if exists profiles_read on public.profiles;
@@ -278,12 +302,17 @@ create policy subscriptions_owner_rw on public.subscriptions
 for all using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+drop policy if exists stripe_webhook_events_service on public.stripe_webhook_events;
+create policy stripe_webhook_events_service on public.stripe_webhook_events
+for all using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
 -- Utility view for rate limiting logs (app managed)
 create table if not exists public.tmdb_rate_limit (
   id bigserial primary key,
   actor text,
   actor_type text not null, -- user | ip
-  bucket text not null, -- search | movie
+  bucket text not null, -- search | movie | export
   window_start timestamptz not null,
   window_end timestamptz not null,
   request_count integer not null default 0,

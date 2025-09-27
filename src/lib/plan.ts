@@ -37,5 +37,5 @@ export function canCreateCollection(profile: Profile, currentCount: number) {
 export function planGateMessage(profile: Profile) {
   const limit = PLAN_COLLECTION_LIMIT[profile.plan];
   if (limit === null) return "";
-  return `Free members can create up to ${limit} collections.`;
+  return `Free members can create up to ${limit} collections. Upgrade to Plus for unlimited shelves.`;
 }

@@ -1,4 +1,4 @@
-import type { Collection, CollectionItem, Movie, Profile } from "@/lib/supabase/types";
+import type { Collection, CollectionItem, Movie, Profile, WatchStatus } from "@/lib/supabase/types";
 import type { MovieSummary } from "@/lib/tmdb";
 
 /**
@@ -14,4 +14,6 @@ export interface CollectionWithItems extends Collection {
  */
 export interface CollectionItemWithMovie extends CollectionItem {
   movie: MovieSummary | (Movie & { overview?: string | null; vote_average?: number | null }) | null;
+  viewStatus?: WatchStatus | null;
+  watchedAt?: string | null;
 }

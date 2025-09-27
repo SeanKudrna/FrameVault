@@ -228,6 +228,25 @@ export interface Database {
           updated_at?: string;
         };
       };
+      stripe_webhook_events: {
+        Row: {
+          id: number;
+          event_id: string;
+          event_type: string;
+          processed_at: string;
+        };
+        Insert: {
+          id?: number;
+          event_id: string;
+          event_type: string;
+          processed_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          event_type?: string;
+          processed_at?: string;
+        };
+      };
       tmdb_rate_limit: {
         Row: {
           id: number;

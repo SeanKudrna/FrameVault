@@ -4,7 +4,7 @@
 Plan-related UI lives here, providing messaging when users hit plan limits or need to upgrade.
 
 ## Key Component
-- `plan-gate.tsx` (`PlanGate`): displays a lock icon, custom title/message, and an optional CTA button for viewing plans when a feature is restricted.
+- `plan-gate.tsx` (`PlanGate`): displays a lock icon, custom title/message, and a CTA button that can either link to another route (`href`) or trigger a custom upgrade handler (`onCtaClick`).
 
 ## Update Protocol
 - Document new plan-awareness components here (e.g., upsell banners) and note how they should interact with plan helpers in `@/lib/plan`.

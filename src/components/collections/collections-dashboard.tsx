@@ -166,7 +166,8 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
         <PlanGate
           title="You’ve reached the free tier limit"
           message={planGateMessage(profile)}
-          ctaLabel="Upgrade coming Day 2"
+          ctaLabel="Upgrade to Plus"
+          href="/settings/billing"
         />
       ) : null}
 

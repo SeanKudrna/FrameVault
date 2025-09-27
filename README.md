@@ -1,6 +1,14 @@
-# FrameVault Day 1 — MVP Foundation
+# FrameVault Day 2 — Experience & Billing
 
-FrameVault is a Next.js 14 + Supabase app for curating cinematic collections with TMDB-backed search and shareable public views. This repository contains the full Day 1 deliverable: auth, collections CRUD, drag-and-drop ordering, TMDB proxy routes, plan gating, and a seedable Postgres schema.
+FrameVault is a Next.js 14 + Supabase app for curating cinematic collections with TMDB-backed search and public showcases. Day 2 expands the foundation with subscription billing (Stripe Checkout + customer portal), marketing polish, public SEO improvements, watch-history logging, Plus customization, and export tooling—all layered on the Day 1 core.
+
+## New in Day 2
+
+- **Billing & Plans**: Stripe Checkout/Portal wiring, plan enforcement, and a refreshed marketing site (`/`, `/pricing`).
+- **Public Experience**: Share button, cover theming, dynamic SEO metadata, and automated `robots.txt` + `sitemap.xml`.
+- **Activity Logging**: Watched/Watching/Want toggles persisted to `view_logs` and a new `/app/history` timeline.
+- **Plus Customization**: Cover uploads (Supabase Storage `covers` bucket) and accent theme presets for public pages.
+- **Data Export**: Authenticated CSV/JSON exports (`/api/export.csv`, `/api/export.json`) gated to Plus/Pro with per-minute rate limiting.
 
 ## Quick Start
 
@@ -40,7 +48,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...       # anon public key
 SUPABASE_SERVICE_ROLE_KEY=...           # service role (server-only)
 SUPABASE_DB_URL=...                     # Postgres connection string for migrations
 
-# Stripe (Day 2 integration placeholder)
+# Stripe
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=...
 STRIPE_SECRET_KEY=...
 STRIPE_WEBHOOK_SECRET=...
@@ -53,6 +61,8 @@ TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
 ```
 
 `SUPABASE_DB_URL` is only required when running `npm run db:apply`; the app itself uses the anon/service keys.
+
+**Storage**: `db/supabase.sql` now provisions a public Supabase Storage bucket named `covers`; run `npm run db:apply` (or apply the insert manually) to ensure each environment has it.
 
 ## Database
 
@@ -78,7 +88,9 @@ TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
 | `npm run db:apply`  | Apply `db/supabase.sql` using `psql` (requires `SUPABASE_DB_URL`) |
 | `npm run db:seed`   | Seed demo user + collections via Supabase service key |
 
-## Day 1 Feature Checklist
+## Feature Checklist
+
+**Day 1 Foundation**
 
 - [x] Supabase Auth with profile onboarding and username (case-insensitive unique).
 - [x] Collections CRUD with immutable slug history (`previous_slugs`) + redirects.
@@ -88,6 +100,15 @@ TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
 - [x] Free plan gated at 5 collections (UI + server enforcement).
 - [x] Seed script (`npm run db:seed`) and demo credentials.
 
+**Day 2 Enhancements**
+
+- [x] Stripe Checkout + customer portal with webhook-driven plan syncing.
+- [x] Marketing refresh (`/`, `/pricing`) with plan messaging.
+- [x] Public page polish: share button, theme-aware hero, robots/sitemap generation.
+- [x] Movie status toggles (Watched/Watching/Want) + `/app/history` timeline.
+- [x] Plus customization (cover uploads via Supabase Storage, accent themes).
+- [x] CSV/JSON export endpoints with plan gating and rate limiting.
+
 ## Happy Path QA
 
 1. Sign in (or sign up) → profile is created automatically.
@@ -96,10 +117,14 @@ TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
 4. Toggle collection public → copy `/c/...` link → loads logged-out; private collections 404 when logged-out.
 5. Rename collection → slug changes, previous slug redirects to new slug.
 6. Re-run TMDB search rapidly → hitting limits returns `429` with retry message.
+7. Visit `/settings/billing`, start a Stripe test checkout (4242…) → plan upgrades and UI refreshes within ~30s.
+8. Mark a movie as Watched/Watching/Want → confirm `/app/history` groups the activity under the current month.
+9. Trigger `/api/export.csv` and `/api/export.json` (Plus/Pro) → files download and rate limiting enforces ~1/min.
 
 ## Notes & Next Steps
 
-- Stripe env vars are placeholders for Day 2 billing work.
+- Configure Stripe publishable/secret/webhook keys locally and in deployment for billing flows to function.
+- Apply the latest schema (`npm run db:apply`) so the `covers` storage bucket exists before testing cover uploads.
 - The UI uses Tailwind CSS (JIT via tailwindcss v4 + `@tailwindcss/postcss`).
 - All Supabase mutations go through server actions with centralized gating and revalidation.
 
