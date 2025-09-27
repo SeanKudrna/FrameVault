@@ -18,6 +18,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 interface UpdateProfileInput {
   username: string;
   displayName?: string;
+  preferredRegion?: string;
 }
 
 /**
@@ -52,11 +53,14 @@ export async function updateProfileAction(input: UpdateProfileInput) {
     throw new ApiError("username_taken", "That username is already in use", 409);
   }
 
+  const preferredRegion = input.preferredRegion?.toUpperCase() ?? null;
+
   const { error } = await supabase
     .from("profiles")
     .update({
       username,
       display_name: input.displayName?.trim() || null,
+      preferred_region: preferredRegion ?? undefined,
     })
     .eq("id", user.id);
 

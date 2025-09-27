@@ -2,6 +2,22 @@
 
 All notable changes to FrameVault will be documented in this file.
 
+## [0.0.2] - 2025-09-27
+
+### Added
+- Smart Picks recommendations rail on the dashboard with personalised TMDB Discover results and explanatory rationale for Pro members.
+- Streaming availability badges inside the collection editor, powered by the new `/api/tmdb/providers` endpoint and per-profile region preferences.
+- Pro analytics dashboard summarising top genres/directors/actors, yearly cadence, recent activity, and average ratings.
+- Collaborative collections: invite/remove editors via the new `collection_collaborators` table with expanded RLS and UI management.
+- Discover page (`/discover`) highlighting trending public collections with follow/unfollow controls, plus curator profile pages at `/c/:username`.
+- Guided onboarding flow that walks new members through claiming their profile, spinning up a starter shelf, and adding their first five films.
+- Dynamic collection OG images (`/api/og/collection`) for richer social sharing previews.
+
+### Changed
+- Dashboard now redirects incomplete accounts to the onboarding flow and surfaces Smart Picks only for Pro plans.
+- Settings profile form supports updating the preferred streaming region alongside username/display name.
+- Supabase schema gains onboarding state, preferred region, watch-provider cache, collaborator table, and discovery-friendly indexes.
+
 ## [0.0.1] - 2025-09-26
 
 ### Added

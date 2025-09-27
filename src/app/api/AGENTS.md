@@ -8,6 +8,8 @@ Serverless API routes live here. They primarily proxy TMDB requests through Fram
 - `billing/` exposes authenticated routes for starting Stripe Checkout sessions and opening the customer portal.
 - `stripe/` houses the webhook handler that syncs subscription state back into Supabase.
 - `export.csv` & `export.json` stream data exports (Plus/Pro only) with rate limiting.
+- `recommendations/` returns personalised Smart Picks for Pro members.
+- `og/collection/` generates dynamic OpenGraph images for public collections with streaming posters and hero copy.
 
 ## Operational Notes
 - Responses are JSON with standard `{ error, message }` payloads on failure.
@@ -19,3 +21,4 @@ Serverless API routes live here. They primarily proxy TMDB requests through Fram
 ## Update Protocol
 - Document new API namespaces or methods here, noting authentication requirements and helper dependencies.
 - Whenever TMDB handler contracts change (params, response shape), update these notes and the `@/lib/tmdb` briefing.
+- Recommendations and watch-provider routes apply additional rate limiting buckets (`recommendations`, `providers`) to avoid hammering TMDB.

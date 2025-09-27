@@ -6,7 +6,7 @@
  * and dialogs.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2 } from "lucide-react";
@@ -27,6 +27,8 @@ import { planGateMessage, PLAN_COLLECTION_LIMIT, canCreateCollection } from "@/l
 import type { SmartPick, TasteProfile } from "@/lib/recommendations";
 import { PosterImage } from "@/components/media/poster-image";
 import { cn } from "@/lib/utils";
+
+const SMART_PICKS_STATE_KEY = "framevault:smart-picks-open";
 
 /**
  * Lightweight projection of a collection used within the dashboard grid.
@@ -63,7 +65,27 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
   const [formDescription, setFormDescription] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [smartPicksOpen, setSmartPicksOpen] = useState(true);
+  const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    const storedValue = window.localStorage.getItem(SMART_PICKS_STATE_KEY);
+
+    if (storedValue === null) {
+      return true;
+    }
+
+    return storedValue === "true";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(SMART_PICKS_STATE_KEY, smartPicksOpen ? "true" : "false");
+  }, [smartPicksOpen]);
 
   const limit = PLAN_COLLECTION_LIMIT[profile.plan] ?? Infinity;
   // Plan gating logic ensures the UI matches server enforcement before the
@@ -114,7 +136,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
         <section
           className={cn(
             "rounded-3xl border border-slate-800/60 bg-slate-950/70 px-6 shadow-[0_24px_80px_-60px_rgba(15,23,42,0.8)]",
-            smartPicksOpen ? "space-y-6 pt-8 pb-6" : "space-y-3 pt-9 pb-1"
+            smartPicksOpen ? "space-y-6 pt-4 pb-6" : "space-y-3 pt-4 pb-1"
           )}
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

@@ -13,6 +13,17 @@ import { useToast } from "@/components/providers/toast-provider";
 import type { Profile } from "@/lib/supabase/types";
 import { updateProfileAction } from "@/app/(app)/settings/actions";
 
+const REGIONS = [
+  { code: "US", label: "United States" },
+  { code: "CA", label: "Canada" },
+  { code: "GB", label: "United Kingdom" },
+  { code: "AU", label: "Australia" },
+  { code: "DE", label: "Germany" },
+  { code: "FR", label: "France" },
+  { code: "IN", label: "India" },
+  { code: "JP", label: "Japan" },
+];
+
 /**
  * Client form for updating a user's public display name and username.
  */
@@ -21,6 +32,7 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
   const { toast } = useToast();
   const [username, setUsername] = useState(profile.username);
   const [displayName, setDisplayName] = useState(profile.display_name ?? "");
+  const [region, setRegion] = useState(profile.preferred_region ?? "US");
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,8 +53,13 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
 
     startTransition(async () => {
       try {
-        await updateProfileAction({ username, displayName });
-        setProfile({ ...profile, username, display_name: displayName || null });
+        await updateProfileAction({ username, displayName, preferredRegion: region });
+        setProfile({
+          ...profile,
+          username,
+          display_name: displayName || null,
+          preferred_region: region,
+        });
         setError(null);
         setMessage("Profile updated");
         toast({
@@ -85,6 +102,24 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
           required
         />
         <p className="text-xs text-slate-500">Public pages will live at framevault.app/c/{username}</p>
+      </div>
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-[0.24em] text-slate-500" htmlFor="region">
+          Streaming region
+        </label>
+        <select
+          id="region"
+          value={region}
+          onChange={(event) => setRegion(event.target.value)}
+          className="h-11 w-full rounded-xl border border-slate-800/70 bg-slate-950/70 px-3 text-sm text-slate-100"
+        >
+          {REGIONS.map((entry) => (
+            <option key={entry.code} value={entry.code}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-500">We’ll use this region to prioritise streaming availability suggestions.</p>
       </div>
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}
       {message ? <p className="text-sm text-emerald-400">{message}</p> : null}

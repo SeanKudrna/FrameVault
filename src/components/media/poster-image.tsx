@@ -24,12 +24,21 @@ interface PosterImageProps {
   className?: string;
   sizes?: string;
   tmdbId?: number | null;
+  imageClassName?: string;
 }
 
 /**
  * Intelligent poster image that handles TMDB fallbacks, alternate sizes, and cache refreshes.
  */
-export function PosterImage({ src, fallbackSrc = null, alt, className, sizes = "100vw", tmdbId }: PosterImageProps) {
+export function PosterImage({
+  src,
+  fallbackSrc = null,
+  alt,
+  className,
+  sizes = "100vw",
+  tmdbId,
+  imageClassName,
+}: PosterImageProps) {
   const initial = src ?? fallbackSrc ?? null;
   const [posterSrc, setPosterSrc] = useState<string | null>(initial);
   const [failed, setFailed] = useState(false);
@@ -110,32 +119,34 @@ export function PosterImage({ src, fallbackSrc = null, alt, className, sizes = "
   }
 
   return (
-    <Image
-      src={resolvedSrc}
-      alt={alt}
-      fill
-      sizes={sizes}
-      className={cn("object-cover", className)}
-      onError={() => {
-        if (fallbackSrc && posterSrc !== fallbackSrc) {
-          setPosterSrc(fallbackSrc);
-          setFailed(false);
-          setHasRefetched(true);
-          setSizeIndex(0);
-          return;
-        }
-        if (posterSrc && posterSrc.includes("image.tmdb.org")) {
-          const next = nextTmdbSize(posterSrc);
-          if (next && next !== posterSrc) {
-            setPosterSrc(next);
+    <div className={cn("relative overflow-hidden", className)}>
+      <Image
+        src={resolvedSrc}
+        alt={alt}
+        fill
+        sizes={sizes}
+        className={cn("object-cover", imageClassName)}
+        onError={() => {
+          if (fallbackSrc && posterSrc !== fallbackSrc) {
+            setPosterSrc(fallbackSrc);
             setFailed(false);
+            setHasRefetched(true);
+            setSizeIndex(0);
             return;
           }
-        }
-        if (resolvedSrc === FALLBACK_POSTER) return;
-        void refetchPoster();
-      }}
-      priority={false}
-    />
+          if (posterSrc && posterSrc.includes("image.tmdb.org")) {
+            const next = nextTmdbSize(posterSrc);
+            if (next && next !== posterSrc) {
+              setPosterSrc(next);
+              setFailed(false);
+              return;
+            }
+          }
+          if (resolvedSrc === FALLBACK_POSTER) return;
+          void refetchPoster();
+        }}
+        priority={false}
+      />
+    </div>
   );
 }

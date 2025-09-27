@@ -7,7 +7,7 @@ Authentication-specific components live here. They manage Supabase auth flows, f
 - `sign-in-form.tsx` (`SignInForm`):
   - Client component using `useSupabase` to perform password-based sign-in or sign-up.
   - Reads `mode` from query string, toggles between modes, and displays inline validation.
-  - On success, refreshes the Supabase session and redirects to `/app`.
+  - After sign-in, polls `refreshSession()` until a verified Supabase session is available, then issues a `router.replace("/app")` followed by `router.refresh()` so the server redirect lands without a manual reload.
   - Exposes demo credentials block for quick access.
 
 ## Dependencies

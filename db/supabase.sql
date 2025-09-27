@@ -36,10 +36,36 @@ create table if not exists public.profiles (
   display_name text,
   avatar_url text,
   plan text not null default 'free', -- free | plus | pro
+  preferred_region text not null default 'US',
+  onboarding_state jsonb not null default '{"claimedProfile": false, "createdFirstCollection": false, "addedFiveMovies": false, "completed": false}'::jsonb,
   stripe_customer_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists preferred_region text;
+
+alter table public.profiles
+  alter column preferred_region set data type text,
+  alter column preferred_region set default 'US',
+  alter column preferred_region set not null;
+
+update public.profiles
+set preferred_region = 'US'
+where preferred_region is null;
+
+alter table public.profiles
+  add column if not exists onboarding_state jsonb;
+
+alter table public.profiles
+  alter column onboarding_state set data type jsonb,
+  alter column onboarding_state set default '{"claimedProfile": false, "createdFirstCollection": false, "addedFiveMovies": false, "completed": false}'::jsonb,
+  alter column onboarding_state set not null;
+
+update public.profiles
+set onboarding_state = '{"claimedProfile": false, "createdFirstCollection": false, "addedFiveMovies": false, "completed": false}'::jsonb
+where onboarding_state is null;
 
 create unique index if not exists idx_profiles_username_ci on public.profiles (lower(username));
 
@@ -66,6 +92,7 @@ create table if not exists public.collections (
 create unique index if not exists idx_collections_owner_slug on public.collections(owner_id, slug);
 create index if not exists idx_collections_owner on public.collections(owner_id);
 create index if not exists idx_collections_public_slug on public.collections(slug) where is_public;
+create index if not exists idx_collections_public_updated_at on public.collections(is_public, updated_at desc);
 
 drop trigger if exists set_collections_updated_at on public.collections;
 create trigger set_collections_updated_at
@@ -126,6 +153,36 @@ create index if not exists idx_collection_items_collection on public.collection_
 create index if not exists idx_collection_items_position on public.collection_items(collection_id, position);
 create index if not exists idx_collection_items_tmdb on public.collection_items(tmdb_id);
 
+-- Collaborative editing support
+create table if not exists public.collection_collaborators (
+  collection_id uuid not null references public.collections(id) on delete cascade,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null default 'editor', -- owner | editor | viewer (viewer optional)
+  created_at timestamptz not null default now(),
+  primary key (collection_id, user_id)
+);
+
+create index if not exists idx_collection_collaborators_user on public.collection_collaborators(user_id);
+create index if not exists idx_collection_collaborators_collection on public.collection_collaborators(collection_id);
+
+alter table public.collection_collaborators
+  add column if not exists owner_id uuid;
+
+update public.collection_collaborators cc
+set owner_id = c.owner_id
+from public.collections c
+where cc.collection_id = c.id and cc.owner_id is distinct from c.owner_id;
+
+alter table public.collection_collaborators
+  alter column owner_id set not null;
+
+alter table public.collection_collaborators
+  add constraint if not exists collection_collaborators_owner_fk
+    foreign key (owner_id) references public.profiles(id) on delete cascade;
+
+create index if not exists idx_collection_collaborators_owner on public.collection_collaborators(owner_id);
+
 -- Cached TMDB movie metadata
 create table if not exists public.movies (
   tmdb_id bigint primary key,
@@ -136,8 +193,11 @@ create table if not exists public.movies (
   genres jsonb,
   runtime integer,
   tmdb_json jsonb,
+  watch_providers jsonb,
   updated_at timestamptz not null default now()
 );
+
+create index if not exists idx_movies_genres_gin on public.movies using gin(genres jsonb_path_ops);
 
 create or replace function public.set_movies_updated_at()
 returns trigger
@@ -174,6 +234,8 @@ create table if not exists public.view_logs (
 );
 
 create index if not exists idx_view_logs_user on public.view_logs(user_id);
+create index if not exists idx_view_logs_user_status on public.view_logs(user_id, status);
+create index if not exists idx_view_logs_tmdb on public.view_logs(tmdb_id);
 
 -- Social primitives for later milestones
 create table if not exists public.follows (
@@ -182,6 +244,9 @@ create table if not exists public.follows (
   created_at timestamptz not null default now(),
   primary key (follower_id, followee_id)
 );
+
+create index if not exists idx_follows_followee on public.follows(followee_id);
+create index if not exists idx_follows_follower on public.follows(follower_id);
 
 create table if not exists public.comments (
   id uuid primary key default gen_random_uuid(),
@@ -223,6 +288,7 @@ create table if not exists public.stripe_webhook_events (
 alter table public.profiles enable row level security;
 alter table public.collections enable row level security;
 alter table public.collection_items enable row level security;
+alter table public.collection_collaborators enable row level security;
 alter table public.movies enable row level security;
 alter table public.view_logs enable row level security;
 alter table public.comments enable row level security;
@@ -247,26 +313,66 @@ with check (auth.uid() = owner_id);
 
 drop policy if exists collections_read_public on public.collections;
 create policy collections_read_public on public.collections
-for select using (is_public or auth.uid() = owner_id);
+for select using (
+  is_public
+  or auth.uid() = owner_id
+  or exists (
+    select 1
+    from public.collection_collaborators cc
+    where cc.collection_id = id and cc.user_id = auth.uid()
+  )
+);
 
 drop policy if exists collection_items_owner_crud on public.collection_items;
 create policy collection_items_owner_crud on public.collection_items
 for all using (
   exists (
     select 1 from public.collections c
-    where c.id = collection_id and c.owner_id = auth.uid()
+    where c.id = collection_id and (
+      c.owner_id = auth.uid()
+      or exists (
+        select 1 from public.collection_collaborators cc
+        where cc.collection_id = c.id and cc.user_id = auth.uid()
+      )
+    )
   )
 )
 with check (
   exists (
     select 1 from public.collections c
-    where c.id = collection_id and c.owner_id = auth.uid()
+    where c.id = collection_id and (
+      c.owner_id = auth.uid()
+      or exists (
+        select 1 from public.collection_collaborators cc
+        where cc.collection_id = c.id and cc.user_id = auth.uid()
+      )
+    )
   )
 );
 
 drop policy if exists movies_read on public.movies;
 create policy movies_read on public.movies
 for select using (true);
+
+drop policy if exists collection_collaborators_select on public.collection_collaborators;
+create policy collection_collaborators_select on public.collection_collaborators
+for select using (
+  auth.uid() = user_id
+  or auth.uid() = owner_id
+);
+
+drop policy if exists collection_collaborators_owner_manage on public.collection_collaborators;
+create policy collection_collaborators_owner_manage on public.collection_collaborators
+for all using (
+  auth.uid() = owner_id
+)
+with check (
+  auth.uid() = owner_id
+);
+
+drop policy if exists collection_collaborators_self_delete on public.collection_collaborators;
+create policy collection_collaborators_self_delete on public.collection_collaborators
+for delete using (auth.uid() = user_id);
 
 drop policy if exists movies_service_upsert on public.movies;
 create policy movies_service_upsert on public.movies
@@ -284,13 +390,46 @@ for select using (
   exists (
     select 1
     from public.collections c
-    where c.id = collection_id and (c.is_public or c.owner_id = auth.uid())
+    where c.id = collection_id and (
+      c.is_public
+      or c.owner_id = auth.uid()
+      or exists (
+        select 1 from public.collection_collaborators cc
+        where cc.collection_id = c.id and cc.user_id = auth.uid()
+      )
+    )
   )
 );
 
 drop policy if exists comments_insert on public.comments;
 create policy comments_insert on public.comments
-for insert with check (auth.role() = 'authenticated');
+for insert with check (
+  auth.uid() = user_id
+  and (
+    exists (
+      select 1 from public.collections c
+      where c.id = collection_id and c.owner_id = auth.uid()
+    )
+    or exists (
+      select 1 from public.collection_collaborators cc
+      where cc.collection_id = collection_id and cc.user_id = auth.uid()
+    )
+  )
+);
+
+drop policy if exists comments_owner_delete on public.comments;
+create policy comments_owner_delete on public.comments
+for delete using (
+  auth.uid() = user_id
+  or exists (
+    select 1 from public.collections c
+    where c.id = collection_id and c.owner_id = auth.uid()
+  )
+  or exists (
+    select 1 from public.collection_collaborators cc
+    where cc.collection_id = collection_id and cc.user_id = auth.uid()
+  )
+);
 
 drop policy if exists follows_owner_crud on public.follows;
 create policy follows_owner_crud on public.follows

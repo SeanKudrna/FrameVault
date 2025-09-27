@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import Stripe from "stripe";
 import { apiError, apiJson } from "@/lib/api";
 import { getServerEnv } from "@/env";
-import { getPlanFromPrice, resolveProfilePlan, type PaidPlan } from "@/lib/billing";
+import { getPlanFromPrice, isActiveStripeStatus, resolveProfilePlan, type PaidPlan } from "@/lib/billing";
 import { getStripeClient } from "@/lib/stripe";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
@@ -50,12 +50,30 @@ async function saveSubscription({
   plan,
   status,
   currentPeriodEnd,
-}: SaveSubscriptionArgs) {
+}: SaveSubscriptionArgs): Promise<boolean> {
   const existing = await service
     .from("subscriptions")
-    .select("id")
+    .select("id, stripe_subscription_id")
     .eq("user_id", userId)
     .maybeSingle();
+
+  if (existing.error) throw existing.error;
+
+  const currentSubscriptionId = existing.data?.stripe_subscription_id ?? null;
+  const incomingSubscriptionId = subscriptionId ?? null;
+  const isActive = isActiveStripeStatus(status);
+
+  if (
+    existing.data &&
+    currentSubscriptionId &&
+    incomingSubscriptionId &&
+    currentSubscriptionId !== incomingSubscriptionId &&
+    !isActive
+  ) {
+    // Ignore stale events for previously canceled subscriptions so we keep
+    // the latest active subscription details associated with the user.
+    return false;
+  }
 
   const payload = {
     user_id: userId,
@@ -72,6 +90,7 @@ async function saveSubscription({
       .update(payload)
       .eq("id", existing.data.id);
     if (error) throw error;
+    return true;
   } else {
     const { error } = await service.from("subscriptions").insert(payload);
     if (error) {
@@ -81,11 +100,14 @@ async function saveSubscription({
           .update(payload)
           .eq("user_id", userId);
         if (retry.error) throw retry.error;
+        return true;
       } else {
         throw error;
       }
     }
   }
+
+  return true;
 }
 
 async function updateProfilePlan(
@@ -150,7 +172,7 @@ async function handleSubscriptionEvent(
     .eq("id", userId)
     .maybeSingle();
 
-  await saveSubscription({
+  const persisted = await saveSubscription({
     service,
     userId,
     customerId,
@@ -159,6 +181,10 @@ async function handleSubscriptionEvent(
     status,
     currentPeriodEnd,
   });
+
+  if (!persisted) {
+    return;
+  }
 
   await updateProfilePlan(service, userId, effectivePlan, customerId);
   revalidateBillingViews(profileRow?.username ?? null);

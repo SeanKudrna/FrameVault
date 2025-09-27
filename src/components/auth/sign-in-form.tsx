@@ -24,6 +24,25 @@ export function SignInForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function waitForSession(maxAttempts = 10, delayMs = 200) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const next = await refreshSession();
+        if (next) {
+          return next;
+        }
+      } catch (error) {
+        if (attempt === maxAttempts - 1) {
+          throw error;
+        }
+      }
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+    return null;
+  }
+
   /**
    * Handles form submission by performing either a password sign-in or sign-up
    * request, then refreshing the session context so protected routes render
@@ -53,8 +72,13 @@ export function SignInForm() {
         if (signUpError) throw signUpError;
       }
 
-      await refreshSession();
+      const session = await waitForSession();
+      if (mode === "sign-in" && !session) {
+        throw new Error("We couldn’t verify your session. Please try again.");
+      }
+
       router.replace("/app");
+      router.refresh();
     } catch (err) {
       setError(formatError(err));
     } finally {

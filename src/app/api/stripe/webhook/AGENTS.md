@@ -5,7 +5,7 @@ Implements the `POST /api/stripe/webhook` endpoint that verifies Stripe signatur
 
 ## Event Handling
 - `checkout.session.completed`: retrieves the subscription, upserts `public.subscriptions`, and stamps `profiles.stripe_customer_id`.
-- `customer.subscription.created|updated|deleted`: updates `public.subscriptions`, derives the effective plan via `@/lib/billing`, and keeps `profiles.plan` in sync.
+- `customer.subscription.created|updated|deleted`: updates `public.subscriptions`, skipping stale cancellation events that reference an older subscription id, derives the effective plan via `@/lib/billing`, and keeps `profiles.plan` in sync.
 - `customer.created`: backfills `stripe_customer_id` on the profile when Stripe provisions a customer out of band.
 
 ## Idempotency

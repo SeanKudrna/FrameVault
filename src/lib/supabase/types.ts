@@ -8,6 +8,13 @@ export type Plan = "free" | "plus" | "pro";
 
 export type WatchStatus = "watched" | "watching" | "want";
 
+export interface OnboardingState {
+  claimedProfile: boolean;
+  createdFirstCollection: boolean;
+  addedFiveMovies: boolean;
+  completed: boolean;
+}
+
 /**
  * Root database contract consumed by the Supabase client helpers. The nested
  * structure matches the format expected by `@supabase/supabase-js`.
@@ -22,6 +29,8 @@ export interface Database {
           display_name: string | null;
           avatar_url: string | null;
           plan: Plan;
+          preferred_region: string;
+          onboarding_state: OnboardingState;
           stripe_customer_id: string | null;
           created_at: string;
           updated_at: string;
@@ -32,6 +41,8 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           plan?: Plan;
+          preferred_region?: string;
+          onboarding_state?: OnboardingState;
           stripe_customer_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -41,6 +52,8 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           plan?: Plan;
+          preferred_region?: string;
+          onboarding_state?: OnboardingState;
           stripe_customer_id?: string | null;
           updated_at?: string;
         };
@@ -108,6 +121,26 @@ export interface Database {
           rating?: number | null;
         };
       };
+      collection_collaborators: {
+        Row: {
+          collection_id: string;
+          owner_id: string;
+          user_id: string;
+          role: string;
+          created_at: string;
+        };
+        Insert: {
+          collection_id: string;
+          owner_id: string;
+          user_id: string;
+          role?: string;
+          created_at?: string;
+        };
+        Update: {
+          owner_id?: string;
+          role?: string;
+        };
+      };
       movies: {
         Row: {
           tmdb_id: number;
@@ -118,6 +151,7 @@ export interface Database {
           genres: Record<string, unknown>[] | null;
           runtime: number | null;
           tmdb_json: Record<string, unknown> | null;
+          watch_providers: Record<string, unknown> | null;
           updated_at: string;
         };
         Insert: {
@@ -129,6 +163,7 @@ export interface Database {
           genres?: Record<string, unknown>[] | null;
           runtime?: number | null;
           tmdb_json?: Record<string, unknown> | null;
+          watch_providers?: Record<string, unknown> | null;
           updated_at?: string;
         };
         Update: {
@@ -139,6 +174,7 @@ export interface Database {
           genres?: Record<string, unknown>[] | null;
           runtime?: number | null;
           tmdb_json?: Record<string, unknown> | null;
+          watch_providers?: Record<string, unknown> | null;
           updated_at?: string;
         };
       };
@@ -284,4 +320,5 @@ export interface Database {
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Collection = Database["public"]["Tables"]["collections"]["Row"];
 export type CollectionItem = Database["public"]["Tables"]["collection_items"]["Row"];
+export type CollectionCollaborator = Database["public"]["Tables"]["collection_collaborators"]["Row"];
 export type Movie = Database["public"]["Tables"]["movies"]["Row"];

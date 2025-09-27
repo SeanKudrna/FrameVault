@@ -7,7 +7,8 @@
 import { redirect } from "next/navigation";
 import { CollectionsDashboard } from "@/components/collections/collections-dashboard";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Profile } from "@/lib/supabase/types";
+import type { Profile, OnboardingState } from "@/lib/supabase/types";
+import { getSmartPicksForUser } from "@/lib/recommendations";
 export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -41,6 +42,11 @@ export default async function DashboardPage() {
     throw collectionsError;
   }
 
+  const onboardingState = (profileData.onboarding_state as OnboardingState | null) ?? null;
+  if (!onboardingState?.completed) {
+    redirect("/app/onboarding");
+  }
+
   // Flatten the nested count aggregate to the shape expected by the dashboard
   // component. We expose `item_count` rather than the raw relationship to keep
   // the UI decoupled from Supabase response formats.
@@ -57,5 +63,21 @@ export default async function DashboardPage() {
       : 0,
   }));
 
-  return <CollectionsDashboard profile={profileData as Profile} collections={collections} />;
+  let recommendations: Awaited<ReturnType<typeof getSmartPicksForUser>> | null = null;
+  if ((profileData as Profile).plan === "pro") {
+    try {
+      recommendations = await getSmartPicksForUser(profileData.id, { limit: 6 });
+    } catch (error) {
+      console.error("Failed to load recommendations", error);
+    }
+  }
+
+  return (
+    <CollectionsDashboard
+      profile={profileData as Profile}
+      collections={collections}
+      recommendations={recommendations?.picks ?? null}
+      tasteProfile={recommendations?.profile ?? null}
+    />
+  );
 }
