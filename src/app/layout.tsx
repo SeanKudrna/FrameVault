@@ -11,6 +11,7 @@ import { ensureProfile } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
+import { FRAMEVAULT_VERSION } from "@/lib/version";
 import "./globals.css";
 
 /**
@@ -94,7 +95,12 @@ export default async function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={cn("bg-background text-foreground antialiased", inter.variable, playfair.variable)}>
         <AppProviders initialSession={session} initialProfile={profile}>
-          {children}
+          <div className="flex min-h-screen flex-col">
+            <div className="flex-1">{children}</div>
+            <footer className="fixed inset-x-0 bottom-0 border-t border-slate-800/60 bg-slate-950/90 px-4 py-3 text-center text-xs text-slate-400">
+              FrameVault v{FRAMEVAULT_VERSION}
+            </footer>
+          </div>
         </AppProviders>
       </body>
     </html>

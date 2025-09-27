@@ -17,6 +17,7 @@ Shared domain logic and service helpers live here. Modules expose reusable utili
 - `tmdb.ts`: TMDB proxy core—maps API responses, caches movies in Supabase, enforces rate limits, ranks search results by relevance/popularity, and powers `/api/tmdb/*`.
 - `utils.ts`: small UI helpers (`cn`, `truncate`, `formatError`).
 - `supabase/`: client factories for browser/service/server contexts plus generated types.
+- `version.ts`: single source of truth for the visible FrameVault version string consumed by layouts and documentation.
 
 ## Update Protocol
 - Document new modules or exported helpers here and update dependent `AGENTS.md` files when contracts change.
