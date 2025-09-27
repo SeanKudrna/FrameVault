@@ -23,23 +23,25 @@ export function SignInForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function waitForSession(maxAttempts = 10, delayMs = 200) {
+  async function waitForSession({ maxAttempts = 25, delayMs = 200 } = {}) {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      try {
-        const next = await refreshSession();
-        if (next) {
-          return next;
-        }
-      } catch (error) {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
         if (attempt === maxAttempts - 1) {
           throw error;
         }
+      } else if (data.session) {
+        void refreshSession().catch(() => undefined);
+        return data.session;
       }
+
       if (attempt < maxAttempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
+
     return null;
   }
 
@@ -51,6 +53,7 @@ export function SignInForm() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     try {
@@ -72,9 +75,16 @@ export function SignInForm() {
         if (signUpError) throw signUpError;
       }
 
-      const session = await waitForSession();
-      if (mode === "sign-in" && !session) {
-        throw new Error("We couldn’t verify your session. Please try again.");
+      const session = await waitForSession({ maxAttempts: mode === "sign-in" ? 30 : 20 });
+
+      if (!session) {
+        if (mode === "sign-in") {
+          throw new Error("We couldn’t verify your session yet. Please try again.");
+        }
+
+        setNotice("Check your email to confirm your account, then sign in.");
+        setMode("sign-in");
+        return;
       }
 
       router.replace("/app");
@@ -127,6 +137,7 @@ export function SignInForm() {
           />
         </div>
         {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+        {notice ? <p className="text-sm text-indigo-200">{notice}</p> : null}
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? "Processing..." : mode === "sign-in" ? "Sign in" : "Create account"}
         </Button>

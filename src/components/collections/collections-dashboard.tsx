@@ -324,9 +324,9 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
           </p>
           {pick.rationale.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {pick.rationale.map((reason) => (
+              {pick.rationale.map((reason, index) => (
                 <span
-                  key={reason}
+                  key={`${reason}-${index}`}
                   className="max-w-full rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 leading-snug"
                 >
                   {reason}
