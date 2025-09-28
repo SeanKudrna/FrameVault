@@ -119,7 +119,7 @@ export function PosterImage({
   }
 
   return (
-    <div className={cn("relative overflow-hidden", className)}>
+    <div className={cn("relative h-full w-full overflow-hidden", className)}>
       <Image
         src={resolvedSrc}
         alt={alt}
