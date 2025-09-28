@@ -34,45 +34,48 @@ const SMART_PICKS_STATE_KEY = "framevault:smart-picks-open";
  * Modern carousel component for smart picks with smooth animations.
  */
 function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [page, setPage] = useState(0);
   const itemsPerView = 3;
+  const totalPages = Math.max(1, Math.ceil(recommendations.length / itemsPerView));
+  const clampedPage = Math.min(page, totalPages - 1);
+  const startIndex = clampedPage * itemsPerView;
+  const visibleItems = recommendations.slice(startIndex, startIndex + itemsPerView);
+  const showNavigation = recommendations.length > itemsPerView;
+  const canGoPrev = clampedPage > 0;
+  const canGoNext = startIndex + itemsPerView < recommendations.length;
 
-  const nextSlide = () => {
-    setCurrentIndex((prev) =>
-      prev + itemsPerView >= recommendations.length ? 0 : prev + itemsPerView
-    );
-  };
-
-  const prevSlide = () => {
-    setCurrentIndex((prev) =>
-      prev - itemsPerView < 0 ? Math.max(0, recommendations.length - itemsPerView) : prev - itemsPerView
-    );
-  };
-
-  const visibleItems = recommendations.slice(currentIndex, currentIndex + itemsPerView);
+  useEffect(() => {
+    setPage(0);
+  }, [recommendations.length]);
 
   return (
     <div className="relative">
-      <div className="flex items-center gap-4 mb-6">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={prevSlide}
-          disabled={currentIndex === 0}
-          className="h-10 w-10 rounded-xl hover:bg-surface-hover disabled:opacity-50"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </Button>
+      <div className="mb-6 flex items-center gap-4">
+        {showNavigation ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPage((prev) => Math.max(prev - 1, 0))}
+            disabled={!canGoPrev}
+            className="h-10 w-10 rounded-xl hover:bg-surface-hover disabled:opacity-40"
+            aria-label="Show previous smart picks"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+        ) : (
+          <div className="hidden h-10 w-10 md:block" aria-hidden="true" />
+        )}
 
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AnimatePresence mode="popLayout">
-            {visibleItems.map((pick, index) => (
+        <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <AnimatePresence mode="wait">
+            {visibleItems.map((pick) => (
               <motion.div
-                key={`${pick.movie.tmdbId}-${currentIndex + index}`}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
+                key={`${pick.movie.tmdbId}-${clampedPage}`}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="h-full"
               >
                 <SmartPickCard pick={pick} />
               </motion.div>
@@ -80,32 +83,40 @@ function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] 
           </AnimatePresence>
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={nextSlide}
-          disabled={currentIndex + itemsPerView >= recommendations.length}
-          className="h-10 w-10 rounded-xl hover:bg-surface-hover disabled:opacity-50"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </Button>
+        {showNavigation ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPage((prev) => Math.min(prev + 1, totalPages - 1))}
+            disabled={!canGoNext}
+            className="h-10 w-10 rounded-xl hover:bg-surface-hover disabled:opacity-40"
+            aria-label="Show next smart picks"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </Button>
+        ) : (
+          <div className="hidden h-10 w-10 md:block" aria-hidden="true" />
+        )}
       </div>
 
-      {/* Progress Indicators */}
-      <div className="flex justify-center gap-2">
-        {Array.from({ length: Math.ceil(recommendations.length / itemsPerView) }).map((_, index) => (
-          <button
-            key={index}
-            onClick={() => setCurrentIndex(index * itemsPerView)}
-            className={cn(
-              "w-2 h-2 rounded-full transition-all duration-200",
-              Math.floor(currentIndex / itemsPerView) === index
-                ? "bg-accent-primary scale-125"
-                : "bg-border-primary hover:bg-border-secondary"
-            )}
-          />
-        ))}
-      </div>
+      {showNavigation ? (
+        <div className="flex justify-center gap-2">
+          {Array.from({ length: totalPages }).map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={() => setPage(index)}
+              className={cn(
+                "h-2 w-2 rounded-full transition-transform duration-200",
+                index === clampedPage
+                  ? "bg-accent-primary scale-125"
+                  : "bg-border-primary hover:bg-border-secondary"
+              )}
+              aria-label={`Go to smart picks set ${index + 1}`}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -525,29 +536,47 @@ interface SmartPickCardProps {
 }
 
 function SmartPickCard({ pick }: SmartPickCardProps) {
-  const releaseYear = pick.movie.releaseYear ? `• ${pick.movie.releaseYear}` : "";
+  const releaseYear = pick.movie.releaseYear ? ` • ${pick.movie.releaseYear}` : "";
+  const runtimeLabel = pick.movie.runtime ? `${pick.movie.runtime} min` : "Feature length";
+  const rationale = pick.rationale.slice(0, 3);
+
   return (
-    <div className="group flex gap-4 overflow-hidden rounded-3xl border border-slate-800/70 bg-slate-900/40 p-4 transition-shadow hover:shadow-[0_24px_60px_-40px_rgba(129,140,248,0.6)]">
-      <PosterImage
-        src={pick.movie.posterUrl ?? pick.movie.fallbackPosterUrl ?? null}
-        alt={pick.movie.title}
-        className="h-[180px] w-[120px] flex-shrink-0 rounded-2xl"
-        imageClassName="rounded-2xl"
-      />
-      <div className="flex min-w-0 flex-1 flex-col justify-between">
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold leading-tight text-slate-100 break-words">
-            {pick.movie.title}
-          </h3>
-          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-            Smart Pick {releaseYear}
-          </p>
-          {pick.rationale.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {pick.rationale.map((reason, index) => (
+    <article className="group flex h-full max-w-[320px] flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)]">
+      <div className="flex gap-4">
+        <div className="relative h-28 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-border-secondary/60 bg-surface-secondary">
+          <PosterImage
+            src={pick.movie.posterUrl ?? pick.movie.fallbackPosterUrl ?? null}
+            fallbackSrc={pick.movie.fallbackPosterUrl ?? null}
+            alt={pick.movie.title}
+            tmdbId={pick.movie.tmdbId}
+            sizes="(min-width: 1280px) 140px, (min-width: 768px) 120px, 38vw"
+            className="h-full w-full"
+            imageClassName="rounded-none object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        </div>
+
+        <div className="flex flex-1 flex-col gap-2">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-accent-secondary">
+              <Sparkles className="h-3 w-3" />
+              <span>Smart Pick{releaseYear}</span>
+            </div>
+            <h3 className="text-base font-semibold text-text-primary transition-colors duration-200 line-clamp-2 group-hover:text-gradient">
+              {pick.movie.title}
+            </h3>
+            {pick.movie.overview ? (
+              <p className="text-sm text-text-secondary line-clamp-3 leading-relaxed">
+                {pick.movie.overview}
+              </p>
+            ) : null}
+          </div>
+
+          {rationale.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {rationale.map((reason, index) => (
                 <span
-                  key={`${reason}-${index}`}
-                  className="max-w-full rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 leading-snug"
+                  key={`${pick.movie.tmdbId}-reason-${index}`}
+                  className="rounded-full border border-accent-primary/30 bg-accent-primary/10 px-2 py-0.5 text-[10px] text-accent-primary/80"
                 >
                   {reason}
                 </span>
@@ -555,22 +584,20 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
             </div>
           ) : null}
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-          <a
-            href={`https://www.themoviedb.org/movie/${pick.movie.tmdbId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-indigo-200 transition-colors hover:text-indigo-100"
-          >
-            View on TMDB
-          </a>
-          <span aria-hidden="true" className="hidden sm:inline">
-            •
-          </span>
-          <span>{pick.movie.runtime ? `${pick.movie.runtime} min` : "Feature"}</span>
-        </div>
       </div>
-    </div>
+
+      <div className="mt-auto flex items-center justify-between text-[11px] text-text-tertiary">
+        <span>{runtimeLabel}</span>
+        <a
+          href={`https://www.themoviedb.org/movie/${pick.movie.tmdbId}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-accent-secondary transition-colors hover:text-accent-primary"
+        >
+          View on TMDB
+        </a>
+      </div>
+    </article>
   );
 }
 
