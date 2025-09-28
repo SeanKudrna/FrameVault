@@ -105,14 +105,26 @@ export function SupabaseProvider({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async () => {
+    } = supabase.auth.onAuthStateChange(async (event) => {
       if (!isMounted) return;
       try {
         const verifiedSession = await fetchVerifiedSession(supabase);
         if (!isMounted) return;
+
+        const wasAuthenticated = !!session;
+        const isAuthenticated = !!verifiedSession;
+
         setSession(verifiedSession);
         if (!verifiedSession) {
           setProfile(null);
+        }
+
+        // Navigate to app when user signs in and we're on an auth page
+        if (!wasAuthenticated && isAuthenticated && event === 'SIGNED_IN') {
+          const currentPath = window.location.pathname;
+          if (currentPath.startsWith('/auth/') || currentPath === '/') {
+            router.replace('/app');
+          }
         }
       } catch {
         if (!isMounted) return;
@@ -129,7 +141,7 @@ export function SupabaseProvider({
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase, initialSession]);
+  }, [supabase, initialSession, session, router]);
 
   useEffect(() => {
     setProfile(initialProfile ?? null);

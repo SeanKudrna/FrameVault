@@ -15,7 +15,7 @@ async function main() {
   const displayName = "Avery Demo";
 
   let userId: string | null = null;
-  const userLookup = await admin.listUsers({ page: 1, perPage: 1, email });
+  const userLookup = await admin.listUsers();
   if (userLookup.error) {
     throw userLookup.error;
   }
@@ -46,7 +46,7 @@ async function main() {
   const profile = await supabase
     .from("profiles")
     .upsert(
-      { id: userId, username, display_name: displayName, plan: "free" },
+      { id: userId, username, display_name: displayName, plan: "free" } as any,
       { onConflict: "id" }
     )
     .select("*")
@@ -173,7 +173,7 @@ async function main() {
       poster_url: movie.poster_url ? `${env.TMDB_IMAGE_BASE}/w500${movie.poster_url}` : null,
       backdrop_url: movie.backdrop_url ? `${env.TMDB_IMAGE_BASE}/w1280${movie.backdrop_url}` : null,
       tmdb_json: null,
-    })),
+    })) as any,
     { onConflict: "tmdb_id" }
   );
 
@@ -207,7 +207,7 @@ async function main() {
           slug,
           description: collection.description,
           is_public: collection.is_public,
-        },
+        } as any,
         { onConflict: "owner_id,slug" }
       )
       .select("id")
@@ -217,7 +217,7 @@ async function main() {
       throw inserted.error ?? new Error("Failed to insert collection");
     }
 
-    const collectionId = inserted.data.id;
+    const collectionId = (inserted as any).data.id;
 
     const items = collection.movieIds.map((tmdb_id, position) => ({
       collection_id: collectionId,
@@ -227,7 +227,7 @@ async function main() {
 
     const upsertItems = await supabase
       .from("collection_items")
-      .upsert(items, { onConflict: "collection_id,tmdb_id" });
+      .upsert(items as any, { onConflict: "collection_id,tmdb_id" });
 
     if (upsertItems.error) throw upsertItems.error;
   }

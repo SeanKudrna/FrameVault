@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CreditCard, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, CreditCard, Minus, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/providers/toast-provider";
 import type { Plan, Profile } from "@/lib/supabase/types";
@@ -48,6 +48,96 @@ function formatPeriod(end: string | null) {
   const date = new Date(end);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+interface PricingFeature {
+  label: string;
+  free: string | boolean;
+  plus: string | boolean;
+  pro: string | boolean;
+}
+
+const pricingFeatures: PricingFeature[] = [
+  {
+    label: "Collections",
+    free: "5 collections",
+    plus: "Unlimited",
+    pro: "Unlimited",
+  },
+  {
+    label: "Custom covers & themes",
+    free: false,
+    plus: true,
+    pro: true,
+  },
+  {
+    label: "Movie status timeline",
+    free: true,
+    plus: true,
+    pro: true,
+  },
+  {
+    label: "CSV & JSON export",
+    free: false,
+    plus: true,
+    pro: true,
+  },
+  {
+    label: "Collaborative collections",
+    free: false,
+    plus: false,
+    pro: "Coming soon",
+  },
+  {
+    label: "Smart recommendations",
+    free: false,
+    plus: false,
+    pro: "Coming soon",
+  },
+  {
+    label: "Streaming availability",
+    free: false,
+    plus: false,
+    pro: "Coming soon",
+  },
+  {
+    label: "Advanced analytics",
+    free: false,
+    plus: false,
+    pro: "Coming soon",
+  },
+];
+
+const planCards = [
+  {
+    key: "free" as Plan,
+    name: "Free",
+    price: "$0",
+    cadence: "forever",
+    description: planCopy.free.description,
+  },
+  {
+    key: "plus" as Plan,
+    name: "Plus",
+    price: "$4.99",
+    cadence: "per month",
+    description: planCopy.plus.description,
+    featured: true,
+  },
+  {
+    key: "pro" as Plan,
+    name: "Pro",
+    price: "$9.99",
+    cadence: "per month",
+    description: planCopy.pro.description,
+  },
+];
+
+function renderFeatureCell(value: PricingFeature["free"]) {
+  if (typeof value === "boolean") {
+    return value ? <Check className="h-5 w-5 text-indigo-300" /> : <Minus className="h-5 w-5 text-slate-600" />;
+  }
+  return <span className="block text-sm text-slate-200 text-center">{value}</span>;
 }
 
 export function BillingSettings({ profile, subscription, checkoutStatus }: BillingSettingsProps) {
@@ -166,7 +256,7 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
                 onClick={handlePortal}
                 disabled={loadingPlan !== null}
                 variant="muted"
-                className="min-w-[160px]"
+                className="min-w-[160px] hover:bg-white/10 hover:text-white/90"
               >
                 <CreditCard size={18} />
                 Manage billing
@@ -196,50 +286,113 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
         </header>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2">
-        <article className="space-y-3 rounded-3xl border border-slate-800/70 bg-slate-950/60 p-6">
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Plus highlights</p>
-          <ul className="space-y-2 text-sm text-slate-300">
-            <li>Unlimited collections and dashboards</li>
-            <li>Custom cover uploads and theme accents</li>
-            <li>CSV and JSON export for personal backups</li>
-          </ul>
-          {profile.plan === "free" ? (
-            <Button
-              variant="muted"
-              onClick={() => handleCheckout("plus")}
-              disabled={loadingPlan !== null}
-              className="mt-4"
-            >
-              Unlock Plus
-              <ArrowRight size={16} className="opacity-80" />
-            </Button>
-          ) : null}
-        </article>
-        <article className="space-y-3 rounded-3xl border border-slate-800/70 bg-slate-950/60 p-6">
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Pro roadmap</p>
-          <ul className="space-y-2 text-sm text-slate-300">
-            <li>Collaborative collections for film clubs</li>
-            <li>Smart recommendations and streaming availability</li>
-            <li>Audience analytics to understand engagement</li>
-          </ul>
-          {profile.plan !== "pro" ? (
-            <Button
-              variant="muted"
-              onClick={() => handleCheckout("pro")}
-              disabled={loadingPlan !== null}
-              className="mt-4"
-            >
-              Go Pro early
-              <ArrowRight size={16} className="opacity-80" />
-            </Button>
-          ) : (
-            <div className="mt-4 inline-flex items-center gap-2 text-sm text-indigo-300">
-              <ShieldCheck size={16} />
-              You already have every perk we offer.
-            </div>
-          )}
-        </article>
+      <section className="space-y-10">
+        <div className="grid gap-6 lg:grid-cols-3">
+          {planCards.map((plan) => {
+            const isCurrent = profile.plan === plan.key;
+            const isFeatured = Boolean(plan.featured);
+            const isProCurrent = plan.key === "pro" && isCurrent;
+
+            return (
+              <article
+                key={plan.key}
+                className={`flex h-full flex-col justify-between gap-6 rounded-3xl border border-slate-800/70 bg-slate-950/60 p-8 shadow-[0_30px_90px_-70px_rgba(15,23,42,0.8)] ${
+                  isFeatured ? "border-indigo-500/60 bg-slate-950" : ""
+                }`}
+              >
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{plan.name}</p>
+                  <div className="flex items-baseline gap-2 text-slate-100">
+                    <span className="text-3xl font-semibold">{plan.price}</span>
+                    <span className="text-sm text-slate-500">{plan.cadence}</span>
+                  </div>
+                  <p className="text-sm text-slate-300">{plan.description}</p>
+                  {isProCurrent ? (
+                    <div className="inline-flex items-center gap-2 text-sm text-indigo-300">
+                      <ShieldCheck size={16} />
+                      You already have every perk we offer.
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  {(() => {
+                    if (isCurrent) {
+                      return (
+                        <Button size="lg" variant="muted" disabled className="w-full">
+                          Current plan
+                        </Button>
+                      );
+                    }
+                    if (plan.key === "free" || (plan.key === "plus" && profile.plan === "pro")) {
+                      return (
+                        <Button
+                          size="lg"
+                          variant="muted"
+                          onClick={handlePortal}
+                          disabled={loadingPlan !== null}
+                          className="w-full hover:bg-white/10 hover:text-white/90"
+                        >
+                          Manage in Stripe
+                          <ArrowRight size={18} className="opacity-80" />
+                        </Button>
+                      );
+                    }
+                    return (
+                      <Button
+                        size="lg"
+                        variant={isFeatured ? "default" : "muted"}
+                        onClick={() => handleCheckout(plan.key as PaidPlan)}
+                        disabled={loadingPlan !== null}
+                        className={`w-full${plan.key === "pro" ? " hover:bg-white/10 hover:text-white/90" : ""}`}
+                      >
+                        {plan.key === "plus" ? "Upgrade to Plus" : "Upgrade to Pro"}
+                        <ArrowRight size={18} className="opacity-80" />
+                      </Button>
+                    );
+                  })()}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="space-y-6 rounded-3xl border border-slate-800/70 bg-slate-950/70 p-8">
+          <h2 className="text-xl font-semibold text-slate-100">Feature comparison</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left">
+              <thead>
+                <tr className="text-sm text-slate-400">
+                  <th className="py-3 pr-6 font-medium">Feature</th>
+                  <th className="py-3 pr-6 font-medium text-center">Free</th>
+                  <th className="py-3 pr-6 font-medium text-center">Plus</th>
+                  <th className="py-3 font-medium text-center">Pro</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {pricingFeatures.map((feature) => (
+                  <tr key={feature.label} className="text-sm">
+                    <td className="py-4 pr-6 text-slate-200">{feature.label}</td>
+                    <td className="py-4 pr-6">
+                      <div className="flex items-center justify-center">
+                        {renderFeatureCell(feature.free)}
+                      </div>
+                    </td>
+                    <td className="py-4 pr-6">
+                      <div className="flex items-center justify-center">
+                        {renderFeatureCell(feature.plus)}
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      <div className="flex items-center justify-center">
+                        {renderFeatureCell(feature.pro)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       {profile.plan !== "free" ? (

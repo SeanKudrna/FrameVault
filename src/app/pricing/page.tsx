@@ -4,7 +4,7 @@
  */
 
 import Link from "next/link";
-import { ArrowRight, Check, Minus } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface PricingFeature {
@@ -71,20 +71,12 @@ const planDetails = [
     price: "$0",
     cadence: "forever",
     description: "Five collections, core editor, public sharing, and status logging.",
-    cta: {
-      label: "Start free",
-      href: "/app",
-    },
   },
   {
     name: "Plus",
     price: "$4.99",
     cadence: "per month",
     description: "Unlimited shelves, custom covers, themes, and data export.",
-    cta: {
-      label: "Upgrade to Plus",
-      href: "/app?upgrade=plus",
-    },
     featured: true,
   },
   {
@@ -92,10 +84,6 @@ const planDetails = [
     price: "$9.99",
     cadence: "per month",
     description: "Built for film clubs: collaboration, analytics, and smart recs soon.",
-    cta: {
-      label: "Talk to us",
-      href: "mailto:hello@framevault.app",
-    },
   },
 ];
 
@@ -121,13 +109,20 @@ function renderCell(value: PricingFeature["free"]) {
   if (typeof value === "boolean") {
     return value ? <Check className="h-5 w-5 text-indigo-300" /> : <Minus className="h-5 w-5 text-slate-600" />;
   }
-  return <span className="text-sm text-slate-200">{value}</span>;
+  return <span className="block text-sm text-slate-200 text-center">{value}</span>;
 }
 
 export default function PricingPage() {
   return (
-    <main className="min-h-screen bg-slate-950">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-24 px-6 pb-24 pt-20">
+    <main className="relative min-h-screen bg-slate-950">
+      <Link
+        href="/"
+        className="absolute left-6 top-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10 hover:text-white"
+      >
+        <span aria-hidden="true">&lt;</span>
+        <span>Back to home</span>
+      </Link>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-24 px-6 pb-24 pt-28">
         <header className="space-y-6 text-center">
           <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Pricing</p>
           <h1 className="text-balance text-4xl font-semibold md:text-5xl">Plans that scale with your cinematic universe</h1>
@@ -152,12 +147,6 @@ export default function PricingPage() {
                 </div>
                 <p className="text-sm text-slate-300">{plan.description}</p>
               </div>
-              <Button asChild size="lg" variant={plan.featured ? "default" : "muted"}>
-                <Link href={plan.cta.href}>
-                  {plan.cta.label}
-                  <ArrowRight size={18} className="opacity-80" />
-                </Link>
-              </Button>
             </article>
           ))}
         </section>
@@ -169,18 +158,24 @@ export default function PricingPage() {
               <thead>
                 <tr className="text-sm text-slate-400">
                   <th className="py-3 pr-6 font-medium">Feature</th>
-                  <th className="py-3 pr-6 font-medium">Free</th>
-                  <th className="py-3 pr-6 font-medium">Plus</th>
-                  <th className="py-3 font-medium">Pro</th>
+                  <th className="py-3 pr-6 font-medium text-center">Free</th>
+                  <th className="py-3 pr-6 font-medium text-center">Plus</th>
+                  <th className="py-3 font-medium text-center">Pro</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {pricingTable.map((row) => (
                   <tr key={row.label} className="text-sm">
                     <td className="py-4 pr-6 text-slate-200">{row.label}</td>
-                    <td className="py-4 pr-6 text-center">{renderCell(row.free)}</td>
-                    <td className="py-4 pr-6 text-center">{renderCell(row.plus)}</td>
-                    <td className="py-4 text-center">{renderCell(row.pro)}</td>
+                    <td className="py-4 pr-6">
+                      <div className="flex items-center justify-center">{renderCell(row.free)}</div>
+                    </td>
+                    <td className="py-4 pr-6">
+                      <div className="flex items-center justify-center">{renderCell(row.plus)}</div>
+                    </td>
+                    <td className="py-4">
+                      <div className="flex items-center justify-center">{renderCell(row.pro)}</div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -194,12 +189,12 @@ export default function PricingPage() {
             <p className="text-sm text-slate-300">
               Upgrades happen inside the app using Stripe Checkout. Once you subscribe, your plan updates automatically within seconds and unlocks Plus features across your account.
             </p>
-            <Button asChild size="lg">
-              <Link href="/app?upgrade=plus">
-                Launch app
-                <ArrowRight size={18} className="opacity-80" />
-              </Link>
-            </Button>
+            <Link
+              href="/auth/sign-in"
+              className="inline-flex h-14 px-8 text-base font-semibold items-center justify-center gap-2 rounded-xl font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/50 relative overflow-hidden bg-gradient-to-r from-accent-primary via-accent-secondary to-accent-tertiary text-white hover:!text-[#0a0a0f] shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:shadow-[0_8px_32px_rgba(139,92,246,0.4)] hover:scale-105 active:scale-95 before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity"
+            >
+              Sign in
+            </Link>
           </div>
           <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 text-sm text-slate-300">
             <p className="font-medium text-slate-100">Need enterprise or annual billing?</p>

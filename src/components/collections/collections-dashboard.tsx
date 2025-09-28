@@ -9,7 +9,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2, Film, Calendar, Lock, Globe, ChevronLeft, ChevronRight } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,86 @@ import { PosterImage } from "@/components/media/poster-image";
 import { cn } from "@/lib/utils";
 
 const SMART_PICKS_STATE_KEY = "framevault:smart-picks-open";
+
+/**
+ * Modern carousel component for smart picks with smooth animations.
+ */
+function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const itemsPerView = 3;
+
+  const nextSlide = () => {
+    setCurrentIndex((prev) =>
+      prev + itemsPerView >= recommendations.length ? 0 : prev + itemsPerView
+    );
+  };
+
+  const prevSlide = () => {
+    setCurrentIndex((prev) =>
+      prev - itemsPerView < 0 ? Math.max(0, recommendations.length - itemsPerView) : prev - itemsPerView
+    );
+  };
+
+  const visibleItems = recommendations.slice(currentIndex, currentIndex + itemsPerView);
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-4 mb-6">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={prevSlide}
+          disabled={currentIndex === 0}
+          className="h-10 w-10 rounded-xl hover:bg-surface-hover disabled:opacity-50"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </Button>
+
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <AnimatePresence mode="popLayout">
+            {visibleItems.map((pick, index) => (
+              <motion.div
+                key={`${pick.movie.tmdbId}-${currentIndex + index}`}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3, delay: index * 0.1 }}
+              >
+                <SmartPickCard pick={pick} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={nextSlide}
+          disabled={currentIndex + itemsPerView >= recommendations.length}
+          className="h-10 w-10 rounded-xl hover:bg-surface-hover disabled:opacity-50"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </Button>
+      </div>
+
+      {/* Progress Indicators */}
+      <div className="flex justify-center gap-2">
+        {Array.from({ length: Math.ceil(recommendations.length / itemsPerView) }).map((_, index) => (
+          <button
+            key={index}
+            onClick={() => setCurrentIndex(index * itemsPerView)}
+            className={cn(
+              "w-2 h-2 rounded-full transition-all duration-200",
+              Math.floor(currentIndex / itemsPerView) === index
+                ? "bg-accent-primary scale-125"
+                : "bg-border-primary hover:bg-border-secondary"
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Lightweight projection of a collection used within the dashboard grid.
@@ -131,123 +211,206 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
   }
 
   return (
-    <div className="space-y-8">
-      {profile.plan === "pro" ? (
-        <section
+    <div className="space-y-12">
+      {/* Smart Picks Section - Pro Only */}
+      {profile.plan === "pro" && (
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           className={cn(
-            "rounded-3xl border border-slate-800/60 bg-slate-950/70 px-6 shadow-[0_24px_80px_-60px_rgba(15,23,42,0.8)]",
-            smartPicksOpen ? "space-y-6 pt-4 pb-6" : "space-y-3 pt-4 pb-1"
+            "relative overflow-hidden rounded-3xl",
+            smartPicksOpen ? "glass-card p-8" : "glass p-6"
           )}
         >
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-slate-100">Smart Picks for You</h2>
-              <p className="text-sm text-slate-400">
-                {tasteProfile?.topGenres?.length
-                  ? `Inspired by your love of ${tasteProfile.topGenres
-                      .slice(0, 2)
-                      .map((genre) => genre.name)
-                      .join(" & " )}`
-                  : "Watch and curate more films to fine-tune your picks."}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs uppercase tracking-[0.32em] text-indigo-200/80">Pro Exclusive</span>
+          {/* Background Effects */}
+          <div className="absolute inset-0 bg-gradient-to-r from-accent-primary/5 via-accent-secondary/5 to-accent-tertiary/5" />
+          <div className="absolute top-0 right-0 w-32 h-32 bg-accent-primary/10 rounded-full blur-3xl" />
+
+          <div className="relative">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-accent-secondary animate-pulse" />
+                  <h2 className="text-2xl font-bold text-gradient">Smart Picks for You</h2>
+                  <div className="px-2 py-1 bg-gradient-to-r from-accent-secondary to-accent-tertiary rounded-full text-xs font-medium text-white">
+                    PRO
+                  </div>
+                </div>
+                <p className="text-text-secondary">
+                  {tasteProfile?.topGenres?.length
+                    ? `Inspired by your love of ${tasteProfile.topGenres
+                        .slice(0, 2)
+                        .map((genre) => genre.name)
+                        .join(" & ")}`
+                    : "Watch and curate more films to fine-tune your personalized recommendations."}
+                </p>
+              </div>
+
               <Button
-                type="button"
-                variant="ghost"
+                variant="glass"
                 size="sm"
-                onClick={() => setSmartPicksOpen((previous) => !previous)}
-                className="gap-2 text-xs text-indigo-200 hover:text-indigo-50"
+                onClick={() => setSmartPicksOpen((prev) => !prev)}
+                className="group self-start md:self-auto"
                 aria-expanded={smartPicksOpen}
                 aria-controls="smart-picks-panel"
               >
                 <ChevronDown
                   size={16}
-                  className={`transition-transform ${smartPicksOpen ? "rotate-180" : "rotate-0"}`}
+                  className={`transition-transform duration-300 ${smartPicksOpen ? "rotate-180" : "rotate-0"}`}
                 />
-                {smartPicksOpen ? "Hide" : "Show"}
+                {smartPicksOpen ? "Hide Picks" : "Show Picks"}
               </Button>
             </div>
-          </div>
-          {smartPicksOpen ? (
-            recommendations && recommendations.length > 0 ? (
-              <div id="smart-picks-panel" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {recommendations.map((pick) => (
-                  <SmartPickCard key={pick.movie.tmdbId} pick={pick} />
-                ))}
-              </div>
-            ) : (
-              <div
-                id="smart-picks-panel"
-                className="rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/40 p-8 text-center text-sm text-slate-400"
-              >
-                Add a few more ratings or build out your shelves to unlock tailored recommendations.
-              </div>
-            )
-          ) : (
-            <div id="smart-picks-panel" className="hidden" aria-hidden="true" />
-          )}
-        </section>
-      ) : null}
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold">Your collections</h1>
-          <p className="text-sm text-slate-400">Craft, reorder, and publish the sets that define your taste.</p>
+            <AnimatePresence mode="wait">
+              {smartPicksOpen && (
+                <motion.div
+                  id="smart-picks-panel"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="overflow-hidden"
+                >
+                  {recommendations && recommendations.length > 0 ? (
+                    <SmartPicksCarousel recommendations={recommendations} />
+                  ) : (
+                    <div className="glass p-8 text-center rounded-2xl">
+                      <div className="space-y-4">
+                        <div className="w-16 h-16 mx-auto bg-surface-secondary rounded-full flex items-center justify-center">
+                          <Sparkles className="w-8 h-8 text-text-muted" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-text-primary mb-2">Build Your Taste Profile</h3>
+                          <p className="text-text-tertiary">
+                            Add ratings and build collections to unlock personalized recommendations tailored just for you.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.section>
+      )}
+
+      {/* Collections Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between"
+      >
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-r from-accent-primary to-accent-secondary rounded-xl">
+              <Film className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gradient">Your Collections</h1>
+              <p className="text-text-secondary">Craft, curate, and share your cinematic masterpieces</p>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="flex items-center gap-6 text-sm text-text-tertiary">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-accent-primary rounded-full"></div>
+              <span>{collections.length} collections</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-accent-secondary rounded-full"></div>
+              <span>{collections.reduce((sum, col) => sum + col.item_count, 0)} films total</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-accent-tertiary rounded-full"></div>
+              <span>{collections.filter(col => col.is_public).length} public</span>
+            </div>
+          </div>
         </div>
-        <Dialog.Root open={isDialogOpen} onOpenChange={setDialogOpen}>
+
+        <div>
+          <Dialog.Root open={isDialogOpen} onOpenChange={setDialogOpen}>
           <Dialog.Trigger asChild>
-            <Button size="lg" disabled={!canCreate}>
-              <Plus size={18} />
-              New collection
+            <Button size="lg" disabled={!canCreate} className="group shadow-lg">
+              <Plus size={18} className="group-hover:rotate-90 transition-transform" />
+              New Collection
             </Button>
           </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 space-y-6 rounded-3xl border border-slate-800/70 bg-slate-950/80 p-8 shadow-2xl focus:outline-none">
-              <Dialog.Title className="text-2xl font-semibold">Create a collection</Dialog.Title>
-              <Dialog.Description className="text-sm text-slate-400">
-                Title your next cinematic theme and optionally describe the vibe.
-              </Dialog.Description>
-              <form className="space-y-4" onSubmit={handleCreate}>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-[0.24em] text-slate-500" htmlFor="collection-title">
-                    Title
-                  </label>
-                  <Input
-                    id="collection-title"
-                    value={formTitle}
-                    onChange={(event) => setFormTitle(event.target.value)}
-                    placeholder="Midnight Monologues"
-                    autoFocus
-                  />
+            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 focus:outline-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="glass-card rounded-3xl p-8 shadow-2xl"
+              >
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div className="text-center space-y-2">
+                    <div className="w-16 h-16 mx-auto bg-gradient-to-r from-accent-primary to-accent-secondary rounded-2xl flex items-center justify-center">
+                      <Plus className="w-8 h-8 text-white" />
+                    </div>
+                    <Dialog.Title className="text-2xl font-bold text-gradient">Create Collection</Dialog.Title>
+                    <Dialog.Description className="text-text-secondary">
+                      Give your cinematic theme a name and optional description.
+                    </Dialog.Description>
+                  </div>
+
+                  {/* Form */}
+                  <form className="space-y-6" onSubmit={handleCreate}>
+                    <div className="space-y-2">
+                      <label className="text-label" htmlFor="collection-title">
+                        Collection Title
+                      </label>
+                      <Input
+                        id="collection-title"
+                        value={formTitle}
+                        onChange={(event) => setFormTitle(event.target.value)}
+                        placeholder="Midnight Mysteries"
+                        autoFocus
+                        className="bg-surface-primary border-border-primary focus:border-accent-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-label" htmlFor="collection-description">
+                        Description <span className="text-text-tertiary">(optional)</span>
+                      </label>
+                      <Textarea
+                        id="collection-description"
+                        value={formDescription}
+                        onChange={(event) => setFormDescription(event.target.value)}
+                        placeholder="A journey through films that explore the shadows of the human psyche..."
+                        rows={3}
+                        className="bg-surface-primary border-border-primary focus:border-accent-primary"
+                      />
+                    </div>
+
+                    {error && (
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                        <p className="text-sm text-red-400">{error}</p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-3 pt-4">
+                      <Dialog.Close asChild>
+                        <Button variant="outline">Cancel</Button>
+                      </Dialog.Close>
+                      <Button type="submit" disabled={pending} className="min-w-[100px]">
+                        {pending ? "Creating..." : "Create"}
+                      </Button>
+                    </div>
+                  </form>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-[0.24em] text-slate-500" htmlFor="collection-description">
-                    Description
-                  </label>
-                  <Textarea
-                    id="collection-description"
-                    value={formDescription}
-                    onChange={(event) => setFormDescription(event.target.value)}
-                    placeholder="A descent into the quiet tension of late-night conversations"
-                  />
-                </div>
-                {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-                <div className="flex justify-end gap-3">
-                  <Dialog.Close asChild>
-                    <Button variant="ghost">Cancel</Button>
-                  </Dialog.Close>
-                  <Button type="submit" disabled={pending}>
-                    {pending ? "Creating..." : "Create"}
-                  </Button>
-                </div>
-              </form>
+              </motion.div>
             </Dialog.Content>
           </Dialog.Portal>
-        </Dialog.Root>
-      </div>
+          </Dialog.Root>
+        </div>
+      </motion.div>
 
       {!canCreate && limit !== Infinity ? (
         <PlanGate
@@ -258,40 +421,97 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
         />
       ) : null}
 
+      {/* Collections Grid */}
       <AnimatePresence mode="popLayout">
         {collections.length === 0 ? (
           <motion.div
             key="empty"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.25 }}
-            className="rounded-3xl border border-dashed border-slate-700/60 bg-slate-900/40 p-12 text-center"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="relative overflow-hidden"
           >
-            <Sparkles className="mx-auto mb-4 h-12 w-12 text-indigo-300" />
-            <h2 className="text-xl font-semibold text-slate-100">Start your first collection</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Give it a name, search TMDB for films, drag to reorder, and share once it feels perfect.
-            </p>
-            <Button className="mt-6" onClick={() => setDialogOpen(true)}>
-              <Plus size={18} />
-              Create collection
-            </Button>
+            {/* Background Effects */}
+            <div className="absolute inset-0 bg-gradient-to-br from-accent-primary/5 via-accent-secondary/5 to-accent-tertiary/5 rounded-3xl" />
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-accent-primary/5 rounded-full blur-3xl" />
+
+            <div className="relative glass-card p-16 text-center rounded-3xl">
+              <div className="space-y-8">
+                {/* Animated Icon */}
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                  className="w-24 h-24 mx-auto bg-gradient-to-r from-accent-primary to-accent-secondary rounded-2xl flex items-center justify-center"
+                >
+                  <Film className="w-12 h-12 text-white" />
+                </motion.div>
+
+                {/* Content */}
+                <div className="space-y-4">
+                  <h2 className="text-3xl font-bold text-gradient">Create Your First Collection</h2>
+                  <p className="text-lead max-w-md mx-auto">
+                    Start building your personal film library. Add movies, organize them beautifully,
+                    and share your cinematic taste with the world.
+                  </p>
+                </div>
+
+                {/* Action Button */}
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button size="lg" onClick={() => setDialogOpen(true)} className="shadow-2xl">
+                    <Plus className="w-5 h-5 mr-2" />
+                    Create Your First Collection
+                  </Button>
+                </motion.div>
+
+                {/* Feature Highlights */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 pt-8 border-t border-border-primary">
+                  {[
+                    { icon: Film, title: "Add Movies", desc: "Search TMDB and add films instantly" },
+                    { icon: Sparkles, title: "Organize", desc: "Drag, reorder, and categorize" },
+                    { icon: Globe, title: "Share", desc: "Publish beautiful public pages" }
+                  ].map((feature, index) => (
+                    <motion.div
+                      key={feature.title}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.5 + index * 0.1 }}
+                      className="text-center space-y-2"
+                    >
+                      <div className="w-12 h-12 mx-auto bg-surface-secondary rounded-xl flex items-center justify-center">
+                        <feature.icon className="w-6 h-6 text-accent-primary" />
+                      </div>
+                      <h3 className="font-semibold text-text-primary">{feature.title}</h3>
+                      <p className="text-sm text-text-tertiary">{feature.desc}</p>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </motion.div>
         ) : (
           <motion.div
             key="grid"
             layout
-            className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+            className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
           >
-            {collections.map((collection) => (
-              <CollectionCard
+            {collections.map((collection, index) => (
+              <motion.div
                 key={collection.id}
-                collection={collection}
-                profile={profile}
-                onUpdated={() => router.refresh()}
-                onDeleted={() => router.refresh()}
-              />
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <CollectionCard
+                  collection={collection}
+                  profile={profile}
+                  onUpdated={() => router.refresh()}
+                  onDeleted={() => router.refresh()}
+                />
+              </motion.div>
             ))}
           </motion.div>
         )}
@@ -467,188 +687,225 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
   return (
     <motion.article
       layout
-      className="group flex h-full cursor-pointer flex-col justify-between rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.9)]"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.3 }}
+      className="group relative cursor-pointer"
       role="button"
       tabIndex={0}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
     >
-      <div className="space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+      {/* Background Gradient Effect */}
+      <div className="absolute inset-0 bg-gradient-to-br from-accent-primary/5 via-transparent to-accent-secondary/5 rounded-3xl blur-xl group-hover:blur-2xl transition-all duration-500" />
+
+      {/* Main Card */}
+      <div className="relative glass-card p-6 rounded-3xl border border-border-primary hover:border-accent-primary/30 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex-1 min-w-0">
             {isRenaming ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   data-collection-card-ignore
+                  className="bg-surface-primary border-border-primary focus:border-accent-primary"
                 />
                 <Textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   rows={3}
                   data-collection-card-ignore
+                  className="bg-surface-primary border-border-primary focus:border-accent-primary"
                 />
               </div>
             ) : (
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-slate-100">{collection.title}</h2>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{collection.item_count} titles</p>
-                {collection.description ? (
-                  <p className="text-sm text-slate-400">{collection.description}</p>
-                ) : null}
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold text-text-primary group-hover:text-gradient transition-all line-clamp-2">
+                  {collection.title}
+                </h3>
+
+                <div className="flex items-center gap-4 text-sm text-text-tertiary">
+                  <div className="flex items-center gap-1">
+                    <Film className="w-4 h-4" />
+                    <span>{collection.item_count} films</span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {collection.is_public ? (
+                      <Globe className="w-4 h-4 text-accent-secondary" />
+                    ) : (
+                      <Lock className="w-4 h-4" />
+                    )}
+                    <span className="capitalize">{collection.is_public ? "Public" : "Private"}</span>
+                  </div>
+                </div>
+
+                {collection.description && (
+                  <p className="text-sm text-text-secondary line-clamp-2 leading-relaxed">
+                    {collection.description}
+                  </p>
+                )}
               </div>
             )}
           </div>
+
+          {/* Actions Menu */}
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 data-collection-card-ignore
-                className="h-10 w-10 rounded-xl border border-transparent bg-transparent text-slate-400 transition-colors focus-visible:border-indigo-400/60 focus-visible:bg-slate-900/70 hover:border-indigo-400/60 hover:bg-slate-900/70 data-[state=open]:border-indigo-400/60 data-[state=open]:bg-slate-900/70"
+                className="h-8 w-8 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-surface-hover"
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               >
-                <Ellipsis size={18} />
+                <Ellipsis className="w-4 h-4" />
               </Button>
             </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              data-collection-card-ignore
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-              className="z-50 min-w-[180px] rounded-xl border border-slate-800/70 bg-slate-900/90 p-2 text-sm text-slate-100 shadow-xl"
-            >
-              <DropdownMenu.Item
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
                 data-collection-card-ignore
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                onSelect={(event) => {
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                className="z-50 min-w-[200px] glass-card rounded-xl border border-border-primary p-2 shadow-xl"
+              >
+                <DropdownMenu.Item
+                  data-collection-card-ignore
+                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-surface-hover transition-colors"
+                  onSelect={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     router.push(`/collections/${collection.id}`);
                   }}
                 >
-                  <Sparkles size={16} />
+                  <Sparkles className="w-4 h-4 text-accent-primary" />
                   Open editor
                 </DropdownMenu.Item>
-              <DropdownMenu.Item
-                data-collection-card-ignore
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                onSelect={(event) => {
+
+                <DropdownMenu.Item
+                  data-collection-card-ignore
+                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-surface-hover transition-colors"
+                  onSelect={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    const origin =
-                      typeof window !== "undefined"
-                        ? window.location.origin
-                        : process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+                    const origin = window.location.origin;
                     const shareUrl = `${origin}/c/${profile.username}/${collection.slug}`;
 
-                    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-                      navigator.clipboard
-                        .writeText(shareUrl)
-                        .then(() => {
-                          toast({
-                            title: "Link copied",
-                            description: "Your public collection link is ready to share.",
-                            variant: "success",
-                          });
-                        })
-                        .catch(() => {
-                          toast({
-                            title: "Copy failed",
-                            description: "Copy the link manually from the address bar.",
-                            variant: "error",
-                          });
+                    if (navigator.clipboard?.writeText) {
+                      navigator.clipboard.writeText(shareUrl).then(() => {
+                        toast({
+                          title: "Link copied",
+                          description: "Your public collection link is ready to share.",
+                          variant: "success",
                         });
-                    } else {
-                      toast({
-                        title: "Clipboard unavailable",
-                        description: "Copy the link manually from the address bar.",
-                        variant: "info",
                       });
                     }
                   }}
                 >
-                  <Eye size={16} />
+                  <Eye className="w-4 h-4 text-accent-secondary" />
                   Copy public link
                 </DropdownMenu.Item>
-              <DropdownMenu.Item
-                data-collection-card-ignore
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                onSelect={(event) => {
+
+                <DropdownMenu.Item
+                  data-collection-card-ignore
+                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-surface-hover transition-colors"
+                  onSelect={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     setRenaming((prev) => !prev);
                     setError(null);
                   }}
                 >
-                  <PencilLine size={16} />
+                  <PencilLine className="w-4 h-4 text-accent-tertiary" />
                   Rename
                 </DropdownMenu.Item>
-              <DropdownMenu.Item
-                data-collection-card-ignore
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-800/80"
-                onSelect={(event) => {
+
+                <DropdownMenu.Item
+                  data-collection-card-ignore
+                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-surface-hover transition-colors"
+                  onSelect={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     handleUpdate({ is_public: !collection.is_public });
                   }}
                 >
-                  {collection.is_public ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {collection.is_public ? (
+                    <EyeOff className="w-4 h-4 text-red-400" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-green-400" />
+                  )}
                   {collection.is_public ? "Make private" : "Make public"}
                 </DropdownMenu.Item>
-                <DropdownMenu.Separator className="my-2 h-px bg-slate-800/70" />
-              <DropdownMenu.Item
-                data-collection-card-ignore
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-rose-400 hover:bg-rose-500/10"
-                onSelect={(event) => {
+
+                <DropdownMenu.Separator className="my-2 h-px bg-border-primary" />
+
+                <DropdownMenu.Item
+                  data-collection-card-ignore
+                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                  onSelect={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     handleDelete();
                   }}
                 >
-                  <Trash2 size={16} />
+                  <Trash2 className="w-4 h-4" />
                   Delete
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         </div>
+
+        {/* Footer */}
+        {!isRenaming && (
+          <div className="flex items-center justify-between pt-4 border-t border-border-secondary">
+            <div className="flex items-center gap-1 text-xs text-text-muted">
+              <Calendar className="w-3 h-3" />
+              <span>Updated {new Date(collection.updated_at).toLocaleDateString()}</span>
+            </div>
+
+            <div className="w-2 h-2 rounded-full bg-accent-primary animate-pulse opacity-60 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+
+        {/* Rename Actions */}
+        {isRenaming && (
+          <div className="flex gap-3 pt-4 border-t border-border-secondary">
+            <Button
+              variant="outline"
+              size="sm"
+              data-collection-card-ignore
+              onClick={() => {
+                setRenaming(false);
+                setTitle(collection.title);
+                setDescription(collection.description ?? "");
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleUpdate({ title, description })}
+              disabled={pending}
+              data-collection-card-ignore
+            >
+              {pending ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <p className="mt-3 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
       </div>
-
-      {isRenaming ? (
-    <div className="mt-4 flex gap-3 text-sm">
-      <Button
-        variant="muted"
-        data-collection-card-ignore
-        onClick={() => {
-          setRenaming(false);
-          setTitle(collection.title);
-          setDescription(collection.description ?? "");
-          setError(null);
-        }}
-      >
-        Cancel
-      </Button>
-      <Button
-        onClick={() =>
-          handleUpdate({ title, description })
-        }
-        disabled={pending}
-        data-collection-card-ignore
-      >
-        {pending ? "Saving..." : "Save"}
-      </Button>
-    </div>
-  ) : (
-        <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
-          <span>{collection.is_public ? "Public" : "Private"}</span>
-          <span>{new Date(collection.updated_at).toLocaleDateString()}</span>
-        </div>
-      )}
-
-      {error ? <p className="mt-4 text-sm text-rose-400">{error}</p> : null}
     </motion.article>
   );
 }
