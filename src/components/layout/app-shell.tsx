@@ -175,7 +175,7 @@ export function AppShell({ children, profile }: AppShellProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full"
+                className="w-full cursor-pointer"
                 onClick={signOut}
               >
                 <LogOut className="w-4 h-4 mr-2" />

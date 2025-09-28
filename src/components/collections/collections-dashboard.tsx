@@ -327,7 +327,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                   size="sm"
                   onClick={refreshSmartPicks}
                   disabled={refreshingSmartPicks}
-                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)]"
+                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)] cursor-pointer"
                 >
                   <RotateCcw
                     size={16}
@@ -342,7 +342,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                   variant="glass"
                   size="sm"
                   onClick={() => setSmartPicksOpen((prev) => !prev)}
-                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)]"
+                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)] cursor-pointer"
                   aria-expanded={smartPicksOpen}
                   aria-controls="smart-picks-panel"
                 >
@@ -434,7 +434,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
             <Button
               size="lg"
               disabled={!canCreate}
-              className="group shadow-lg hover:!text-[#0a0a0f]"
+              className="group shadow-lg hover:!text-[#0a0a0f] cursor-pointer"
             >
               <Plus size={18} className="group-hover:rotate-90 transition-transform" />
               New Collection
@@ -648,7 +648,7 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
       tabIndex={0}
       onClick={navigateToMovie}
       onKeyDown={handleKeyDown}
-      className="group flex h-full w-full flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/60"
+      className="group flex h-full w-full flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/60 cursor-pointer"
     >
       <div className="flex gap-4">
         <div className="relative h-28 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-border-secondary/60 bg-surface-secondary">
