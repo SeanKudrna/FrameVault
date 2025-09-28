@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { ApiError } from "@/lib/api";
+import { computeEffectivePlan } from "@/lib/plan";
 import { loadExportPayload } from "@/lib/export";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/request";
@@ -17,6 +18,8 @@ export async function prepareExportPayload(request: NextRequest) {
   if (!user) {
     throw new ApiError("not_authenticated", "Please sign in to export your data", 401);
   }
+
+  await computeEffectivePlan(supabase, user.id);
 
   const profileResponse = await supabase
     .from("profiles")

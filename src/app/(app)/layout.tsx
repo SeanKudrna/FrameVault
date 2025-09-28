@@ -7,6 +7,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { ensureProfile } from "@/lib/auth";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
 
@@ -27,6 +28,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) {
     redirect("/auth/sign-in");
   }
+
+  await computeEffectivePlan(supabase, user.id);
 
   const { data, error: profileError } = await supabase
     .from("profiles")

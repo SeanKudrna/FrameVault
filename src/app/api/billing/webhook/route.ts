@@ -10,6 +10,7 @@ import {
   resolvePendingSubscriptionPlan,
   resolveProfilePlan,
   resolveSubscriptionPlanCandidate,
+  resolveSubscriptionPlanIncludingFree,
   TERMINAL_SUBSCRIPTION_STATUSES,
   pickHigherPriorityPlan,
   getPlanFromPrice,
@@ -111,7 +112,7 @@ function resolvePriceId(items: Array<Stripe.SubscriptionItem | Stripe.DeletedSub
   return item?.price?.id ?? null;
 }
 
-function normalisePlan(plan: PaidPlan | null, status: string): Plan {
+function normalisePlan(plan: Plan | null, status: string): Plan {
   if (!plan) return "free";
   if (TERMINAL_SUBSCRIPTION_STATUSES.has(status as Stripe.Subscription.Status)) {
     return "free";
@@ -178,7 +179,7 @@ async function upsertSubscription(
     return;
   }
 
-  const { plan: resolvedPlan } = resolveSubscriptionPlanCandidate(subscription);
+  const { plan: resolvedPlan, source: resolvedPlanSource } = resolveSubscriptionPlanCandidate(subscription);
   const pendingPlan = resolvePendingSubscriptionPlan(subscription);
   const status = subscription.status;
   const isActive = isActiveStripeStatus(status);
@@ -233,19 +234,32 @@ async function upsertSubscription(
     }
   }
 
+  const resolvedPlanIncludingFree = resolveSubscriptionPlanIncludingFree(subscription);
   const metadataPlan = readPlanFromMetadata(subscription.metadata);
-  let planCandidate: Plan | null = null;
-  if (resolvedPlan) {
-    planCandidate = resolvedPlan;
+  let planCandidate: Plan | null = resolvedPlan ?? resolvedPlanIncludingFree ?? null;
+
+  if (
+    resolvedPlan &&
+    metadataPlan &&
+    resolvedPlan !== metadataPlan &&
+    resolvedPlanSource !== "price"
+  ) {
+    planCandidate = pickHigherPriorityPlan(resolvedPlan, metadataPlan);
   }
-  if (metadataPlan) {
-    planCandidate = planCandidate
-      ? pickHigherPriorityPlan(planCandidate, metadataPlan)
-      : metadataPlan;
+
+  if (!planCandidate && resolvedPlanIncludingFree) {
+    planCandidate = resolvedPlanIncludingFree;
   }
+
+  if (!planCandidate && metadataPlan) {
+    planCandidate = metadataPlan;
+  }
+
   if (!planCandidate) {
     planCandidate = toPaidPlan(existingRowPlan);
   }
+
+  const hasImmediateFreePlan = resolvedPlanIncludingFree === "free";
   let planForRow = normalisePlan(planCandidate, status);
 
   const pendingPlanCandidateFromStripe = pendingPlan;
@@ -256,11 +270,77 @@ async function upsertSubscription(
     return getPlanFromPrice(pendingPriceId);
   })();
 
-  const pendingPlanCandidate = pendingPlanCandidateFromStripe ?? pendingPlanFromPrice;
+  let pendingPlanCandidate = pendingPlanCandidateFromStripe ?? pendingPlanFromPrice;
+
+  const downgradeSignal = existingRowPlan && planCandidate
+    ? pickHigherPriorityPlan(existingRowPlan, planCandidate) === existingRowPlan &&
+      existingRowPlan !== planCandidate &&
+      !(planCandidate === "free" && hasImmediateFreePlan)
+    : false;
+
+  if (!pendingPlanCandidate && downgradeSignal) {
+    pendingPlanCandidate = planCandidate;
+  }
+
+  if (
+    pendingPlanCandidate &&
+    existingRowPlan &&
+    pendingPlanCandidate === existingRowPlan &&
+    downgradeSignal &&
+    planCandidate &&
+    planCandidate !== existingRowPlan
+  ) {
+    pendingPlanCandidate = planCandidate;
+  }
   const hasPendingFree = pendingUpdateItems.some((item) => isZeroDollarPrice(item.price));
-  let pendingPlanForRow: Plan | null = isActive
-    ? (pendingPlanCandidate ?? (hasPendingFree ? "free" : subscription.cancel_at_period_end ? "free" : null))
-    : null;
+  const hasPendingSignals = Boolean(subscription.pending_update) || pendingUpdateItems.length > 0;
+  const hasDerivedPendingPlan = Boolean(pendingPlanCandidateFromStripe) || Boolean(pendingPlanFromPrice);
+  const hasCancellationDowngrade = Boolean(subscription.cancel_at_period_end);
+
+  const hasStripePendingInsight =
+    hasPendingSignals || hasDerivedPendingPlan || hasPendingFree || hasCancellationDowngrade;
+
+  if (
+    existingRowPendingPlan &&
+    !hasStripePendingInsight &&
+    planForRow &&
+    pickHigherPriorityPlan(existingRowPendingPlan, planForRow) === planForRow &&
+    existingRowPendingPlan !== planForRow
+  ) {
+    existingRowPendingPlan = null;
+  }
+
+  if (!pendingPlanCandidate && existingRowPendingPlan && !hasStripePendingInsight) {
+    pendingPlanCandidate = existingRowPendingPlan;
+  }
+
+  let scheduledDowngrade: Plan | null = pendingPlanCandidate
+    ? pendingPlanCandidate
+    : hasPendingFree
+      ? "free"
+      : hasCancellationDowngrade
+        ? "free"
+        : null;
+
+  if (!scheduledDowngrade && existingRowPendingPlan && !hasStripePendingInsight && downgradeSignal) {
+    scheduledDowngrade = existingRowPendingPlan;
+  }
+
+  let pendingPlanForRow: Plan | null = isActive ? scheduledDowngrade : null;
+
+  if (!scheduledDowngrade && existingRowPendingPlan && !hasStripePendingInsight) {
+    pendingPlanForRow = existingRowPendingPlan;
+  }
+
+  if (
+    planForRow &&
+    pendingPlanForRow &&
+    planForRow === pendingPlanForRow &&
+    (!existingRowPlan || existingRowPlan === planForRow || !downgradeSignal)
+  ) {
+    pendingPlanForRow = null;
+    scheduledDowngrade = null;
+  }
 
   debugLog("pending subscription update inspection", {
     stripeSubscriptionId: stripeSubscriptionIdValue,
@@ -278,14 +358,6 @@ async function upsertSubscription(
     derivedPendingPlanForRow: pendingPlanForRow,
   });
 
-  const scheduledDowngrade: Plan | null = pendingPlanCandidate
-    ? pendingPlanCandidate
-    : hasPendingFree
-      ? "free"
-      : subscription.cancel_at_period_end
-        ? "free"
-        : null;
-
   const downgradeTarget = (scheduledDowngrade ?? planCandidate ?? null) as Plan | null;
 
   if (existingRowPlan && planForRow) {
@@ -300,14 +372,13 @@ async function upsertSubscription(
     }
   }
 
-  if (!scheduledDowngrade) {
-    pendingPlanForRow = null;
-  }
-
   debugLog("subscription plan resolution", {
     stripeSubscriptionId: stripeSubscriptionIdValue,
     status,
     resolvedPlan,
+    resolvedPlanSource,
+    resolvedPlanIncludingFree,
+    hasImmediateFreePlan,
     metadataPlan,
     existingRowPlan,
     planCandidate,
@@ -494,6 +565,54 @@ async function loadExpandedSubscription(stripe: Stripe, subscription: Stripe.Sub
     } as Stripe.SubscriptionPendingUpdate;
   }
 
+  async function enrichSchedule(target: string | Stripe.SubscriptionSchedule | null | undefined) {
+    if (!target) return target;
+
+    if (typeof target === "string") {
+      try {
+        return await stripe.subscriptionSchedules.retrieve(target, {
+          expand: ["phases", "phases.items.price"],
+        });
+      } catch (error) {
+        console.warn("Unable to expand subscription schedule", target, error);
+        return target;
+      }
+    }
+
+    const scheduleObject = target as Stripe.SubscriptionSchedule;
+    const hasExpandedPrices = Array.isArray(scheduleObject.phases)
+      ? scheduleObject.phases.some((phase) =>
+          Array.isArray(phase?.items) &&
+          phase.items.some((item) => item && item.price && typeof item.price === "object")
+        )
+      : false;
+
+    if (!hasExpandedPrices && scheduleObject.id) {
+      try {
+        return await stripe.subscriptionSchedules.retrieve(scheduleObject.id, {
+          expand: ["phases", "phases.items.price"],
+        });
+      } catch (error) {
+        console.warn("Unable to expand subscription schedule", scheduleObject.id, error);
+        return scheduleObject;
+      }
+    }
+
+    return scheduleObject;
+  }
+
+  expanded.schedule = (await enrichSchedule(expanded.schedule)) as typeof expanded.schedule;
+
+  if (expanded.pending_update) {
+    expanded.pending_update = {
+      ...expanded.pending_update,
+      schedule: (await enrichSchedule(expanded.pending_update.schedule)) as
+        | string
+        | Stripe.SubscriptionSchedule
+        | null,
+    };
+  }
+
   return { subscription: expanded, pendingItems };
 }
 
@@ -636,6 +755,7 @@ export async function POST(request: NextRequest) {
           const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
             expand: [
               "items.data.price",
+              "items.data.price.product",
               "items.data.plan",
               "pending_update.subscription_items",
             ],

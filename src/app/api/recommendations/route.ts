@@ -3,6 +3,7 @@ import { apiError } from "@/lib/api";
 import { enforceRateLimit, isRateLimitError } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/request";
 import { getSmartPicksForUser } from "@/lib/recommendations";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
   if (!user) {
     return apiError("not_authenticated", "Sign in to view Smart Picks", 401);
   }
+
+  await computeEffectivePlan(supabase, user.id);
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { OnboardingFlow } from "@/components/onboarding/onboarding-flow";
 import { updateOnboardingStateAction } from "@/app/(app)/app/onboarding/actions";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { OnboardingState, Profile } from "@/lib/supabase/types";
 
@@ -18,6 +19,8 @@ export default async function OnboardingPage() {
   if (!user) {
     redirect("/auth/sign-in");
   }
+
+  await computeEffectivePlan(supabase, user.id);
 
   const profileResponse = await supabase
     .from("profiles")

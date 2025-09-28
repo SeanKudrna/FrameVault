@@ -2,6 +2,23 @@
 
 All notable changes to FrameVault will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Stripe schedule-based downgrades now populate `pending_plan`/`next_plan`, ensuring deferred plan changes appear on the billing screen and apply automatically at renewal.
+
+## [0.0.3] - 2025-09-30
+
+### Added
+- Deferred subscription downgrades powered by new Supabase functions (`apply_subscription_change`, `compute_effective_plan`, `expire_lapsed_plans`) and a nightly plan sweeper script.
+- Unified billing webhook at `/api/billing/webhook` with richer subscription metadata, pending plan tracking, and automatic profile sync.
+- Scheduled maintenance helper `scripts/sweep-plans.ts` for expiring queued downgrades outside of interactive sessions.
+
+### Changed
+- Auth/session helpers now resolve the effective plan on every profile fetch to ensure grace periods honour cancel-at-period-end downgrades.
+- Billing settings surface scheduled plan changes (“Downgrades to Free on …”) alongside the active subscription status.
+- Stripe checkout/portal routes call the new plan RPCs before fetching profile data to avoid stale plan state during upgrades.
+
 ## [0.0.2] - 2025-09-27
 
 ### Added

@@ -8,6 +8,7 @@ import type { Session } from "@supabase/supabase-js";
 import { Inter, Playfair_Display } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { ensureProfile } from "@/lib/auth";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,8 @@ export default async function RootLayout({
 
   let profile: Profile | null = null;
   if (user) {
+    await computeEffectivePlan(supabase, user.id);
+
     // Server components render during navigation and initial page loads, so we
     // resolve the profile here and fall back to automatically creating one when
     // a new account signs in for the first time.

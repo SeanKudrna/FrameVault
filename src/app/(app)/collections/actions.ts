@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { ApiError } from "@/lib/api";
-import { canCreateCollection, planGateMessage } from "@/lib/plan";
+import { canCreateCollection, computeEffectivePlan, planGateMessage } from "@/lib/plan";
 import { ensureUniqueSlug } from "@/lib/slugs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
@@ -34,6 +34,8 @@ async function getProfileOrThrow() {
   if (!user) {
     throw new ApiError("not_authenticated", "You need to sign in", 401);
   }
+
+  await computeEffectivePlan(supabase, user.id);
 
   const { data, error } = await supabase
     .from("profiles")

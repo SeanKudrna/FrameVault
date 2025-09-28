@@ -7,6 +7,7 @@
  */
 
 import type { Session } from "@supabase/supabase-js";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { Profile } from "@/lib/supabase/types";
@@ -56,6 +57,8 @@ export async function getAuthenticatedProfile() {
   if (error) throw error;
   if (!userData?.user) return null;
 
+  await computeEffectivePlan(supabase, userData.user.id);
+
   const { data, error: profileError } = await supabase
     .from("profiles")
     .select("*")
@@ -81,6 +84,8 @@ export async function requireUserProfile() {
   if (!userData?.user) {
     throw new Error("Not authenticated");
   }
+
+  await computeEffectivePlan(supabase, userData.user.id);
 
   const { data, error: profileError } = await supabase
     .from("profiles")
@@ -118,7 +123,7 @@ export async function ensureProfile(userId: string, email?: string | null) {
     .toLowerCase();
   const username = usernameBase || `user-${userId.slice(0, 6)}`;
 
-  const { data, error } = await service
+  const insertResult = await service
     .from("profiles")
     .insert({
       id: userId,
@@ -128,6 +133,16 @@ export async function ensureProfile(userId: string, email?: string | null) {
     .select("*")
     .maybeSingle();
 
-  if (error) throw error;
-  return data as Profile;
+  if (insertResult.error) {
+    if (insertResult.error.code === "23505") {
+      const collisionLookup = await service.from("profiles").select("*").eq("id", userId).maybeSingle();
+      if (collisionLookup.data) {
+        return collisionLookup.data as Profile;
+      }
+    }
+
+    throw insertResult.error;
+  }
+
+  return insertResult.data as Profile;
 }

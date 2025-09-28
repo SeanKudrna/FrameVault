@@ -5,6 +5,7 @@
  * changes to keep TypeScript accurate.
  */
 export type Plan = "free" | "plus" | "pro";
+export type PlanSource = "manual" | "subscription" | "system";
 
 export type WatchStatus = "watched" | "watching" | "want";
 
@@ -29,6 +30,9 @@ export interface Database {
           display_name: string | null;
           avatar_url: string | null;
           plan: Plan;
+          plan_expires_at: string | null;
+          next_plan: Plan | null;
+          plan_source: PlanSource;
           preferred_region: string;
           onboarding_state: OnboardingState;
           stripe_customer_id: string | null;
@@ -41,6 +45,9 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           plan?: Plan;
+          plan_expires_at?: string | null;
+          next_plan?: Plan | null;
+          plan_source?: PlanSource;
           preferred_region?: string;
           onboarding_state?: OnboardingState;
           stripe_customer_id?: string | null;
@@ -52,6 +59,9 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           plan?: Plan;
+          plan_expires_at?: string | null;
+          next_plan?: Plan | null;
+          plan_source?: PlanSource;
           preferred_region?: string;
           onboarding_state?: OnboardingState;
           stripe_customer_id?: string | null;
@@ -236,31 +246,64 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
+          provider: string;
+          subscription_id: string | null;
           stripe_customer_id: string | null;
           stripe_subscription_id: string | null;
           plan: Plan;
           status: string;
+          price_id: string | null;
+          current_period_start: string | null;
           current_period_end: string | null;
+          cancel_at_period_end: boolean;
+          cancel_at: string | null;
+          ended_at: string | null;
+          pending_plan: Plan | null;
+          pending_price_id: string | null;
+          metadata: Record<string, unknown>;
+          is_current: boolean;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
+          provider?: string;
+          subscription_id?: string | null;
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
           plan: Plan;
           status: string;
+          price_id?: string | null;
+          current_period_start?: string | null;
           current_period_end?: string | null;
+          cancel_at_period_end?: boolean;
+          cancel_at?: string | null;
+          ended_at?: string | null;
+          pending_plan?: Plan | null;
+          pending_price_id?: string | null;
+          metadata?: Record<string, unknown>;
+          is_current?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
+          provider?: string;
+          subscription_id?: string | null;
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
           plan?: Plan;
           status?: string;
+          price_id?: string | null;
+          current_period_start?: string | null;
           current_period_end?: string | null;
+          cancel_at_period_end?: boolean;
+          cancel_at?: string | null;
+          ended_at?: string | null;
+          pending_plan?: Plan | null;
+          pending_price_id?: string | null;
+          metadata?: Record<string, unknown>;
+          is_current?: boolean;
           updated_at?: string;
         };
       };
@@ -310,7 +353,24 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      apply_subscription_change: {
+        Args: { target_user: string | null };
+        Returns: Database["public"]["Tables"]["profiles"]["Row"] | null;
+      };
+      compute_effective_plan: {
+        Args: { target_user: string | null };
+        Returns: Plan;
+      };
+      compute_effective_plan_self: {
+        Args: Record<string, never>;
+        Returns: Plan;
+      };
+      expire_lapsed_plans: {
+        Args: { batch_size?: number | null };
+        Returns: Array<{ user_id: string; previous_plan: Plan; new_plan: Plan }>;
+      };
+    };
     Enums: {
       watch_status: WatchStatus;
     };

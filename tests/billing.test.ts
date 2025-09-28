@@ -6,6 +6,7 @@ import {
   resolvePendingSubscriptionPlan,
   resolveProfilePlan,
   resolveSubscriptionPlanCandidate,
+  resolveSubscriptionPlanIncludingFree,
 } from "@/lib/billing";
 
 function createSubscriptionItem(options: {
@@ -161,6 +162,50 @@ function createSubscription(partial: Partial<Stripe.Subscription>): Stripe.Subsc
   } as Stripe.Subscription;
 }
 
+function createSchedulePhase(options: {
+  start: number;
+  end: number | null;
+  priceId?: string;
+  priceMetadata?: Stripe.Metadata;
+  metadata?: Stripe.Metadata;
+}): Stripe.SubscriptionSchedulePhase {
+  const { start, end, priceId, priceMetadata, metadata } = options;
+  return {
+    start_date: start,
+    end_date: end,
+    billing_cycle_anchor: null,
+    currency: "usd",
+    metadata: metadata ?? {},
+    proration_behavior: "create_prorations",
+    collection_method: "charge_automatically",
+    default_payment_method: null,
+    default_tax_rates: [],
+    invoice_settings: { issuer: null },
+    transfer_data: null,
+    iterations: null,
+    anchors: null,
+    items: [
+      {
+        price: priceId ?? undefined,
+        price_data: priceId
+          ? undefined
+          : {
+              currency: "usd",
+              product: "prod_schedule",
+              recurring: { interval: "month", interval_count: 1 },
+              tax_behavior: "unspecified",
+              unit_amount: 0,
+              unit_amount_decimal: "0",
+              metadata: priceMetadata ?? {},
+            },
+        metadata: {},
+        quantity: 1,
+        tax_rates: [],
+      },
+    ],
+  } as Stripe.SubscriptionSchedulePhase;
+}
+
 describe("resolveSubscriptionPlanCandidate", () => {
   it("prefers the newest active subscription item price", () => {
     const plusItem = createSubscriptionItem({
@@ -280,6 +325,101 @@ describe("resolveSubscriptionPlanCandidate", () => {
   });
 });
 
+describe("resolveSubscriptionPlanIncludingFree", () => {
+  it("returns free when the active item price is zero", () => {
+    const freeItem = createSubscriptionItem({
+      id: "si_free",
+      priceId: "price_free_tier",
+      created: 5_000,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [freeItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+    });
+
+    expect(resolveSubscriptionPlanIncludingFree(subscription)).toBe("free");
+  });
+
+  it("prefers recognised paid prices when present", () => {
+    const proItem = createSubscriptionItem({
+      id: "si_pro_plan",
+      priceId: STRIPE_PRICE_IDS.pro,
+      created: 6_000,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [proItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+    });
+
+    expect(resolveSubscriptionPlanIncludingFree(subscription)).toBe("pro");
+  });
+
+  it("prefers the current schedule phase when subscription items already reflect a scheduled downgrade", () => {
+    const now = Math.floor(Date.now() / 1000);
+
+    const schedule = {
+      id: "sub_sched_downgrade",
+      object: "subscription_schedule",
+      canceled_at: null,
+      completed_at: null,
+      created: now - 10,
+      current_phase: { start_date: now - 10, end_date: now + 5 },
+      customer: "cus_123",
+      default_settings: {
+        billing_cycle_anchor: "automatic",
+        billing_thresholds: null,
+        collection_method: "charge_automatically",
+        description: null,
+        invoice_settings: { issuer: null },
+        transfer_data: null,
+      },
+      end_behavior: "release",
+      livemode: false,
+      metadata: {},
+      phases: [
+        createSchedulePhase({ start: now - 10, end: now + 5, priceId: STRIPE_PRICE_IDS.pro }),
+        createSchedulePhase({ start: now + 5, end: now + 20, priceId: STRIPE_PRICE_IDS.plus }),
+      ],
+      released_at: null,
+      released_subscription: null,
+      renewal_behavior: "release",
+      renewal_interval: null,
+      status: "active",
+      subscription: "sub_123",
+      test_clock: null,
+    } as Stripe.SubscriptionSchedule;
+
+    const plusItem = createSubscriptionItem({
+      id: "si_plus_item",
+      priceId: STRIPE_PRICE_IDS.plus,
+      created: now - 5,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [plusItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      schedule,
+    });
+
+    expect(resolveSubscriptionPlanIncludingFree(subscription)).toBe("pro");
+    expect(resolvePendingSubscriptionPlan(subscription)).toBe("plus");
+  });
+});
+
 describe("resolvePendingSubscriptionPlan", () => {
   it("reads the target plan from pending update items", () => {
     const currentItem = createSubscriptionItem({
@@ -321,6 +461,46 @@ describe("resolvePendingSubscriptionPlan", () => {
     expect(resolvePendingSubscriptionPlan(subscription)).toBe("plus");
   });
 
+  it("treats zero-amount pending items as a downgrade to free", () => {
+    const currentItem = createSubscriptionItem({
+      id: "si_current_pro",
+      priceId: STRIPE_PRICE_IDS.pro,
+      created: 2_000,
+    });
+    const pendingFreeItem = createSubscriptionItem({
+      id: "si_pending_free",
+      priceId: "price_pending_free",
+      created: 3_100,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [currentItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      pending_update: {
+        billing_cycle_anchor: null,
+        expires_at: null,
+        subscription_items: {
+          object: "list",
+          data: [pendingFreeItem],
+          has_more: false,
+          url: "/v1/subscriptions/sub_123/items",
+        },
+        trial_end: null,
+        trial_from_plan: false,
+        trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+        metadata: {},
+        invoice_settings: { issuer: null },
+        schedule: null,
+      } as Stripe.SubscriptionPendingUpdate,
+    });
+
+    expect(resolvePendingSubscriptionPlan(subscription)).toBe("free");
+  });
+
   it("falls back to metadata when pending items are missing", () => {
     const subscription = createSubscription({
       pending_update: {
@@ -342,6 +522,147 @@ describe("resolvePendingSubscriptionPlan", () => {
     });
 
     expect(resolvePendingSubscriptionPlan(subscription)).toBe("pro");
+  });
+
+  it("returns the scheduled downgrade plan when provided via subscription.schedule", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const schedule = {
+      id: "sub_sched_123",
+      object: "subscription_schedule",
+      canceled_at: null,
+      completed_at: null,
+      created: now - 10,
+      current_phase: { start_date: now - 10, end_date: now + 5 },
+      customer: "cus_123",
+      default_settings: {
+        billing_cycle_anchor: "automatic",
+        billing_thresholds: null,
+        collection_method: "charge_automatically",
+        description: null,
+        invoice_settings: { issuer: null },
+        transfer_data: null,
+      },
+      end_behavior: "release",
+      livemode: false,
+      metadata: {},
+      phases: [
+        createSchedulePhase({ start: now - 10, end: now + 5, priceId: STRIPE_PRICE_IDS.pro }),
+        createSchedulePhase({ start: now + 5, end: now + 20, priceId: STRIPE_PRICE_IDS.plus }),
+      ],
+      released_at: null,
+      released_subscription: null,
+      renewal_behavior: "release",
+      renewal_interval: null,
+      status: "active",
+      subscription: "sub_123",
+      test_clock: null,
+    } as Stripe.SubscriptionSchedule;
+
+    const proItem = createSubscriptionItem({
+      id: "si_pro_current",
+      priceId: STRIPE_PRICE_IDS.pro,
+      created: now - 20,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [proItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      schedule,
+    });
+
+    expect(resolvePendingSubscriptionPlan(subscription)).toBe("plus");
+  });
+
+  it("treats zero-amount schedule items as a downgrade to free", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const schedule = {
+      id: "sub_sched_free",
+      object: "subscription_schedule",
+      canceled_at: null,
+      completed_at: null,
+      created: now - 10,
+      current_phase: { start_date: now - 10, end_date: now + 5 },
+      customer: "cus_123",
+      default_settings: {
+        billing_cycle_anchor: "automatic",
+        billing_thresholds: null,
+        collection_method: "charge_automatically",
+        description: null,
+        invoice_settings: { issuer: null },
+        transfer_data: null,
+      },
+      end_behavior: "release",
+      livemode: false,
+      metadata: {},
+      phases: [
+        createSchedulePhase({ start: now - 10, end: now + 5, priceId: STRIPE_PRICE_IDS.plus }),
+        createSchedulePhase({ start: now + 5, end: now + 20, priceId: undefined, priceMetadata: { plan: "free" } }),
+      ],
+      released_at: null,
+      released_subscription: null,
+      renewal_behavior: "release",
+      renewal_interval: null,
+      status: "active",
+      subscription: "sub_123",
+      test_clock: null,
+    } as Stripe.SubscriptionSchedule;
+
+    const plusItem = createSubscriptionItem({
+      id: "si_plus_current",
+      priceId: STRIPE_PRICE_IDS.plus,
+      created: now - 20,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [plusItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      schedule,
+    });
+
+    expect(resolvePendingSubscriptionPlan(subscription)).toBe("free");
+  });
+
+  it("returns null when the pending plan matches the current plan", () => {
+    const proItem = createSubscriptionItem({
+      id: "si_pro",
+      priceId: STRIPE_PRICE_IDS.pro,
+      created: 1_000,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [proItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      pending_update: {
+        billing_cycle_anchor: null,
+        expires_at: null,
+        subscription_items: {
+          object: "list",
+          data: [proItem],
+          has_more: false,
+          url: "/v1/subscriptions/sub_123/items",
+        },
+        trial_end: null,
+        trial_from_plan: false,
+        trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+        metadata: {},
+        invoice_settings: { issuer: null },
+        schedule: null,
+      } as Stripe.SubscriptionPendingUpdate,
+    });
+
+    expect(resolvePendingSubscriptionPlan(subscription)).toBeNull();
   });
 });
 

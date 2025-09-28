@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { apiError, apiJson } from "@/lib/api";
 import { getServerEnv } from "@/env";
 import { getPriceIdForPlan, type PaidPlan } from "@/lib/billing";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getStripeClient } from "@/lib/stripe";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
@@ -47,6 +48,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return apiError("not_authenticated", "Sign in to upgrade", 401);
     }
+
+    await computeEffectivePlan(supabase, user.id);
 
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")

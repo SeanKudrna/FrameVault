@@ -23,7 +23,6 @@ export function SignInForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   async function waitForSession({ maxAttempts = 25, delayMs = 200 } = {}) {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -53,13 +52,14 @@ export function SignInForm() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setNotice(null);
     setLoading(true);
 
     try {
       if (!email || !password) {
         throw new Error("Email and password are required");
       }
+
+      let shouldAwaitSession = true;
 
       if (mode === "sign-in") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -68,21 +68,35 @@ export function SignInForm() {
         });
         if (signInError) throw signInError;
       } else {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
         });
         if (signUpError) throw signUpError;
+
+        shouldAwaitSession = Boolean(signUpData.session);
+
+        if (!shouldAwaitSession) {
+          setLoading(false);
+          const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email)}`;
+          router.replace(verifyEmailUrl);
+          setMode("sign-in");
+          return;
+        }
       }
 
-      const session = await waitForSession({ maxAttempts: mode === "sign-in" ? 30 : 20 });
+      const session = shouldAwaitSession
+        ? await waitForSession({ maxAttempts: mode === "sign-in" ? 30 : 20 })
+        : null;
 
       if (!session) {
         if (mode === "sign-in") {
           throw new Error("We couldn’t verify your session yet. Please try again.");
         }
 
-        setNotice("Check your email to confirm your account, then sign in.");
+        const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email)}`;
+        setLoading(false);
+        router.replace(verifyEmailUrl);
         setMode("sign-in");
         return;
       }
@@ -137,7 +151,6 @@ export function SignInForm() {
           />
         </div>
         {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-        {notice ? <p className="text-sm text-indigo-200">{notice}</p> : null}
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? "Processing..." : mode === "sign-in" ? "Sign in" : "Create account"}
         </Button>

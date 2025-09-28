@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { apiError, apiJson } from "@/lib/api";
 import { getServerEnv } from "@/env";
 import { getStripeClient } from "@/lib/stripe";
+import { computeEffectivePlan } from "@/lib/plan";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
 
@@ -25,6 +26,8 @@ export async function GET() {
     if (!user) {
       return apiError("not_authenticated", "Sign in to manage billing", 401);
     }
+
+    await computeEffectivePlan(supabase, user.id);
 
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard";
 import { getAnalyticsOverview } from "@/lib/analytics";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/supabase/types";
 
@@ -18,6 +19,8 @@ export default async function AnalyticsPage() {
   if (!user) {
     redirect("/auth/sign-in");
   }
+
+  await computeEffectivePlan(supabase, user.id);
 
   const { data: profileData, error: profileError } = await supabase
     .from("profiles")

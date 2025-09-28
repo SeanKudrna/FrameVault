@@ -20,6 +20,8 @@ const serverSchema = z.object({
   TMDB_IMAGE_BASE: z.string().url().default("https://image.tmdb.org/t/p"),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  BILLING_WEBHOOK_SECRET: z.string().optional(),
+  BILLING_WEBHOOK_TEST_SECRET: z.string().optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 });
 

@@ -17,6 +17,9 @@ interface SubscriptionSnapshot {
   plan: Plan;
   status: string;
   current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  pending_plan: Plan | null;
+  ended_at: string | null;
 }
 
 interface BillingSettingsProps {
@@ -54,6 +57,19 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
   const periodEnd = useMemo(() => formatPeriod(subscription?.current_period_end ?? null), [
     subscription?.current_period_end,
   ]);
+
+  const pendingPlan = profile.next_plan ?? subscription?.pending_plan ?? null;
+  const scheduledChange = useMemo(() => {
+    if (!pendingPlan || !profile.plan_expires_at) return null;
+    const title = planCopy[pendingPlan]?.title ?? pendingPlan;
+    if (!title) return null;
+    const formatted = formatPeriod(profile.plan_expires_at);
+    if (!formatted) return null;
+    if (pendingPlan === "free") {
+      return `Downgrades to Free on ${formatted}`;
+    }
+    return `Switches to ${title} on ${formatted}`;
+  }, [pendingPlan, profile.plan_expires_at]);
 
   const handleCheckout = useCallback(
     async (plan: PaidPlan) => {
@@ -106,6 +122,7 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
   }, [toast]);
 
   const currentPlan = planCopy[profile.plan];
+  const statusLabel = subscription?.status ?? "no subscription";
 
   useEffect(() => {
     if (!checkoutStatus) return;
@@ -138,8 +155,9 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
             <h2 className="text-2xl font-semibold text-slate-100">{currentPlan.title}</h2>
             <p className="mt-1 max-w-xl text-sm text-slate-300">{currentPlan.description}</p>
             <p className="mt-3 text-xs text-slate-500">
-              Status: <span className="font-medium text-slate-200">{subscription?.status ?? "no subscription"}</span>
-              {periodEnd ? ` • Renews ${periodEnd}` : null}
+              Status: <span className="font-medium text-slate-200">{statusLabel}</span>
+              {scheduledChange ? ` • ${scheduledChange}` : null}
+              {!scheduledChange && periodEnd ? ` • Renews ${periodEnd}` : null}
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
