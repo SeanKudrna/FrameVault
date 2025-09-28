@@ -190,7 +190,7 @@ function mapMovie(payload: TMDBMovieResult): MovieSummary {
 /**
  * Converts a cached Supabase `movies` row back into the `MovieSummary` representation.
  */
-function mapCachedMovie(row: Movie): MovieSummary {
+export function mapCachedMovie(row: Movie): MovieSummary {
   let fallbackPosterUrl: string | null = null;
   if (row.tmdb_json && typeof row.tmdb_json === "object" && "fallbackPosterUrl" in row.tmdb_json) {
     const fallback = (row.tmdb_json as Record<string, unknown>)["fallbackPosterUrl"];
@@ -217,6 +217,60 @@ function mapCachedMovie(row: Movie): MovieSummary {
         ? Number((row.tmdb_json as Record<string, unknown>)["vote_average"])
         : null,
   };
+}
+
+/**
+ * Fetches a movie summary by TMDB id, using cached Supabase data when available and
+ * refreshing from TMDB as needed. Returns null when the movie cannot be resolved.
+ */
+export async function getMovieSummaryById(tmdbId: number, options: { refresh?: boolean } = {}) {
+  if (!Number.isFinite(tmdbId)) {
+    throw new TypeError("tmdbId must be a finite number");
+  }
+
+  const service = getSupabaseServiceRoleClient();
+  const { data: cached, error: cacheError } = await service
+    .from("movies")
+    .select("*")
+    .eq("tmdb_id", tmdbId)
+    .maybeSingle();
+
+  if (cacheError && cacheError.code !== "PGRST116") {
+    throw cacheError;
+  }
+
+  const shouldRefresh = options.refresh === true;
+  if (cached && !shouldRefresh) {
+    return mapCachedMovie(cached);
+  }
+
+  try {
+    const payload = await tmdbFetch<TMDBMovieResult>(`movie/${tmdbId}`, {
+      append_to_response: "credits",
+      language: "en-US",
+    });
+
+    let mapped = mapMovie(payload);
+    const fallbackPosterUrl = await findBestPosterImage(tmdbId, payload.poster_path ?? null);
+    if (fallbackPosterUrl) {
+      mapped = {
+        ...mapped,
+        posterUrl: fallbackPosterUrl,
+        fallbackPosterUrl,
+      };
+    }
+
+    await cacheMovies([mapped], { [mapped.tmdbId]: { ...payload, fallbackPosterUrl } });
+    return mapped;
+  } catch (error) {
+    if (cached) {
+      return mapCachedMovie(cached);
+    }
+    if (error instanceof TMDBError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**

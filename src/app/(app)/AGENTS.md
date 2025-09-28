@@ -8,6 +8,7 @@ This route group represents the authenticated product shell. Requests hitting `/
 - `actions.ts` exposes shared server actions such as the Supabase-backed `signOutAction` used by the client shell.
 - `app/page.tsx` loads the signed-in user's collections from Supabase and renders `CollectionsDashboard` with plan gating metadata.
 - `app/history/page.tsx` queries `view_logs`, joins cached TMDB metadata, and renders the viewing timeline grouped by month.
+- `movies/[tmdbId]/page.tsx` renders the Smart Pick movie detail view, fetching TMDB metadata, watch providers, and the viewer's collections so they can file the title without leaving the page.
 - `collections/actions.ts` exposes server actions for creating, updating, and deleting collections with slug management, plan enforcement, and revalidation of relevant routes.
 - `settings/actions.ts` provides the profile update server action used by the profile settings form.
 

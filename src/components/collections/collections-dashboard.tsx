@@ -6,7 +6,7 @@
  * and dialogs.
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2, Film, Calendar, Lock, Globe, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
@@ -626,12 +626,30 @@ interface SmartPickCardProps {
 }
 
 function SmartPickCard({ pick }: SmartPickCardProps) {
+  const router = useRouter();
   const releaseYear = pick.movie.releaseYear ? ` • ${pick.movie.releaseYear}` : "";
   const runtimeLabel = pick.movie.runtime ? `${pick.movie.runtime} min` : "Feature length";
   const rationale = pick.rationale.slice(0, 3);
 
+  function navigateToMovie() {
+    router.push(`/movies/${pick.movie.tmdbId}`);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      navigateToMovie();
+    }
+  }
+
   return (
-    <article className="group flex h-full w-full flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)]">
+    <article
+      role="link"
+      tabIndex={0}
+      onClick={navigateToMovie}
+      onKeyDown={handleKeyDown}
+      className="group flex h-full w-full flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/60"
+    >
       <div className="flex gap-4">
         <div className="relative h-28 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-border-secondary/60 bg-surface-secondary">
           <PosterImage
@@ -683,6 +701,7 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
           target="_blank"
           rel="noreferrer"
           className="font-medium text-accent-secondary transition-colors hover:text-accent-primary"
+          onClick={(event) => event.stopPropagation()}
         >
           View on TMDB
         </a>
