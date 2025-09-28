@@ -345,6 +345,60 @@ describe("resolveSubscriptionPlanIncludingFree", () => {
     expect(resolveSubscriptionPlanIncludingFree(subscription)).toBe("free");
   });
 
+  it("keeps a free plan when the schedule still references a paid phase", () => {
+    const now = Math.floor(Date.now() / 1000);
+
+    const schedule = {
+      id: "sub_sched_free_current",
+      object: "subscription_schedule",
+      canceled_at: null,
+      completed_at: null,
+      created: now - 20,
+      current_phase: { start_date: now - 10, end_date: now + 5 },
+      customer: "cus_123",
+      default_settings: {
+        billing_cycle_anchor: "automatic",
+        billing_thresholds: null,
+        collection_method: "charge_automatically",
+        description: null,
+        invoice_settings: { issuer: null },
+        transfer_data: null,
+      },
+      end_behavior: "release",
+      livemode: false,
+      metadata: {},
+      phases: [
+        createSchedulePhase({ start: now - 10, end: now + 5, priceId: STRIPE_PRICE_IDS.pro }),
+      ],
+      released_at: null,
+      released_subscription: null,
+      renewal_behavior: "release",
+      renewal_interval: null,
+      status: "active",
+      subscription: "sub_123",
+      test_clock: null,
+    } as Stripe.SubscriptionSchedule;
+
+    const freeItem = createSubscriptionItem({
+      id: "si_free_with_schedule",
+      priceId: "price_free_schedule_tier",
+      created: now - 1,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [freeItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      schedule,
+      metadata: { plan: "pro" },
+    });
+
+    expect(resolveSubscriptionPlanIncludingFree(subscription)).toBe("free");
+  });
+
   it("prefers recognised paid prices when present", () => {
     const proItem = createSubscriptionItem({
       id: "si_pro_plan",

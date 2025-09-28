@@ -567,9 +567,13 @@ export function resolveSubscriptionPlanIncludingFree(subscription: Stripe.Subscr
     resolveCurrentPlanFromSchedule(subscription.pending_update?.schedule);
 
   if (scheduleCurrentPlan) {
-    planCandidate = planCandidate
-      ? pickHigherPriorityPlan(planCandidate, scheduleCurrentPlan)
-      : scheduleCurrentPlan;
+    if (!planCandidate) {
+      planCandidate = scheduleCurrentPlan;
+    } else if (planCandidate === "free") {
+      planCandidate = scheduleCurrentPlan === "free" ? "free" : planCandidate;
+    } else {
+      planCandidate = pickHigherPriorityPlan(planCandidate, scheduleCurrentPlan);
+    }
   }
 
   if (planCandidate) {

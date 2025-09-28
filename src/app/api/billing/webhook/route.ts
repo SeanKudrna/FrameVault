@@ -260,6 +260,19 @@ async function upsertSubscription(
   }
 
   const hasImmediateFreePlan = resolvedPlanIncludingFree === "free";
+
+  const paidFallbackPlan =
+    toPaidPlan(planCandidate) ??
+    toPaidPlan(resolvedPlan) ??
+    toPaidPlan(metadataPlan) ??
+    toPaidPlan(existingRowPlan);
+
+  const treatFreePlanAsCancellation = hasImmediateFreePlan && Boolean(paidFallbackPlan);
+
+  if (treatFreePlanAsCancellation && paidFallbackPlan) {
+    planCandidate = paidFallbackPlan;
+  }
+
   let planForRow = normalisePlan(planCandidate, status);
 
   const pendingPlanCandidateFromStripe = pendingPlan;
@@ -271,6 +284,10 @@ async function upsertSubscription(
   })();
 
   let pendingPlanCandidate = pendingPlanCandidateFromStripe ?? pendingPlanFromPrice;
+
+  if (treatFreePlanAsCancellation) {
+    pendingPlanCandidate = "free";
+  }
 
   const downgradeSignal = existingRowPlan && planCandidate
     ? pickHigherPriorityPlan(existingRowPlan, planCandidate) === existingRowPlan &&
@@ -296,6 +313,7 @@ async function upsertSubscription(
   const hasPendingSignals = Boolean(subscription.pending_update) || pendingUpdateItems.length > 0;
   const hasDerivedPendingPlan = Boolean(pendingPlanCandidateFromStripe) || Boolean(pendingPlanFromPrice);
   const hasCancellationDowngrade = Boolean(subscription.cancel_at_period_end);
+  const pendingUpdateSignalsFree = Boolean(subscription.cancel_at_period_end);
 
   const hasStripePendingInsight =
     hasPendingSignals || hasDerivedPendingPlan || hasPendingFree || hasCancellationDowngrade;
@@ -322,13 +340,30 @@ async function upsertSubscription(
         ? "free"
         : null;
 
-  if (!scheduledDowngrade && existingRowPendingPlan && !hasStripePendingInsight && downgradeSignal) {
+  if (treatFreePlanAsCancellation) {
+    scheduledDowngrade = "free";
+  }
+
+  if (!scheduledDowngrade && pendingUpdateSignalsFree) {
+    scheduledDowngrade = "free";
+  }
+
+  if (
+    !scheduledDowngrade &&
+    existingRowPendingPlan &&
+    !hasStripePendingInsight &&
+    downgradeSignal
+  ) {
     scheduledDowngrade = existingRowPendingPlan;
   }
 
   let pendingPlanForRow: Plan | null = isActive ? scheduledDowngrade : null;
 
-  if (!scheduledDowngrade && existingRowPendingPlan && !hasStripePendingInsight) {
+  if (
+    !scheduledDowngrade &&
+    existingRowPendingPlan &&
+    !hasStripePendingInsight
+  ) {
     pendingPlanForRow = existingRowPendingPlan;
   }
 
@@ -356,6 +391,7 @@ async function upsertSubscription(
     hasPendingFree,
     existingRowPendingPlan,
     derivedPendingPlanForRow: pendingPlanForRow,
+    treatFreePlanAsCancellation,
   });
 
   const downgradeTarget = (scheduledDowngrade ?? planCandidate ?? null) as Plan | null;
@@ -389,6 +425,8 @@ async function upsertSubscription(
     scheduledDowngrade,
     downgradeTarget,
     pendingPlanForRow,
+    treatFreePlanAsCancellation,
+    isActive,
   });
 
   const basePayload = {
