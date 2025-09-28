@@ -5,7 +5,7 @@ Server actions for collection CRUD operations live here along with nested editor
 
 ## Key File
 - `actions.ts` implements server actions:
-  - `createCollectionAction` validates plan limits, generates unique slugs, and inserts new collections.
+  - `createCollectionAction` validates plan limits, generates unique slugs, inserts new collections, and revalidates both the dashboard and the collection editor route for the fresh ID.
   - `updateCollectionDetailsAction` updates titles/descriptions/public state, maintains slug uniqueness, and revalidates dashboard + public paths.
   - `deleteCollectionAction` removes a collection and revalidates dependent routes.
   - `setViewStatusAction` upserts entries in `view_logs` so client components can track Watched/Watching/Want states and revalidates `/app/history`.
@@ -14,7 +14,7 @@ Server actions for collection CRUD operations live here along with nested editor
 
 ## Dependencies
 - Uses Supabase server and service clients, `@/lib/api` for errors, plan gating helpers, slug utilities, and Next.js revalidation APIs.
-- Triggers UI refreshes for `/app`, `/collections/:id`, and public `/c/:username/:slug` pages.
+- Triggers UI refreshes for `/app`, `/app/collections/:id`, and public `/c/:username/:slug` pages.
 
 ## Update Protocol
 - Document new server actions or helper utilities here along with their side effects and revalidation targets.

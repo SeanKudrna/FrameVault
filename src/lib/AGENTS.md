@@ -6,8 +6,8 @@ Shared domain logic and service helpers live here. Modules expose reusable utili
 ## Key Modules
 - `api.ts`: standardized JSON responses and `ApiError` class for server actions/routes.
 - `auth.ts`: helpers for retrieving verified sessions (via `auth.getUser()`), profiles, and ensuring Supabase profile records exist.
-- `plan.ts`: plan limit constants plus `canCreateCollection` and `planGateMessage` helpers.
-- `billing.ts`: Stripe price/plan mapping helpers and subscription status evaluation (`getPriceIdForPlan`, `resolveProfilePlan`).
+- `plan.ts`: plan limit constants, deferred-plan RPC helpers (`computeEffectivePlan`, `computeEffectivePlanSelf`), and messaging utilities (`canCreateCollection`, `planGateMessage`).
+- `billing.ts`: Stripe price/plan mapping helpers, subscription item analysis (`resolveSubscriptionPlanCandidate`, `resolvePendingSubscriptionPlan`) that now fall back to price, product, and schedule metadata (including zero-dollar portal downgrades) plus effective plan evaluation (`resolveProfilePlan`, `pickHigherPriorityPlan`).
 - `stripe.ts`: lazily initialised Stripe SDK client configured from env vars.
 - `themes.ts`: shared collection theme catalogue plus helpers for resolving theme IDs stored in the database.
 - `export.ts`: loads collections/items for data export (JSON/CSV) with movie metadata enrichment.
@@ -15,10 +15,13 @@ Shared domain logic and service helpers live here. Modules expose reusable utili
 - `request.ts`: utility to extract client IPs from incoming requests.
 - `slugs.ts`: slug generation and uniqueness helpers.
 - `tmdb.ts`: TMDB proxy core—maps API responses, caches movies in Supabase, enforces rate limits, ranks search results by relevance/popularity, and powers `/api/tmdb/*`.
+- `analytics.ts`: aggregates viewing and collection metrics (top genres, directors, yearly cadence) for the Pro analytics dashboard.
+- `recommendations.ts`: builds content-based "Smart Picks" using watch history and collections to seed TMDB discover queries.
 - `utils.ts`: small UI helpers (`cn`, `truncate`, `formatError`).
 - `supabase/`: client factories for browser/service/server contexts plus generated types.
 - `version.ts`: single source of truth for the visible FrameVault version string consumed by layouts and documentation.
 
 ## Update Protocol
+- TMDB helpers now expose `discoverMovies` and `fetchWatchProviders` to serve recommendations and streaming availability while caching results.
 - Document new modules or exported helpers here and update dependent `AGENTS.md` files when contracts change.
 - When environment variables or external service assumptions change (e.g., TMDB endpoints, Supabase schema), revise this briefing to signal the new requirements.

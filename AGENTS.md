@@ -9,7 +9,7 @@ FrameVault is a Next.js App Router project that delivers a Supabase-backed movie
 - `src/lib` exposes domain logic: auth helpers, plan gating, TMDB fetch/cache pipelines, Supabase client factories, API helpers, and utilities.
 - `db` defines the Supabase SQL schema, triggers, and helper functions that power collections, movies, and rate limiting.
 - `public` stores static assets such as SVGs and the fallback poster placeholder.
-- `scripts` currently holds the Supabase seeding script for creating demo data.
+- `scripts` currently holds the Supabase seeding script for creating demo data and operational helpers such as the plan expiry sweeper (`sweep-plans.ts`).
 - `plans` documents the product roadmap and multi-day implementation notes.
 
 ## Runtime & Tooling
@@ -21,10 +21,11 @@ FrameVault is a Next.js App Router project that delivers a Supabase-backed movie
 - Commands: `npm run dev`, `npm run lint`, and `npm run build`. `scripts/seed.ts` seeds demo content using Supabase service creds.
 
 ## Cross-Cutting Concerns
-- Supabase credentials are read from environment via `@/env`; ensure `.env.local` stays in sync with AGENTS guidance.
+- Supabase credentials are read from environment via `@/env`; ensure `.env.local` stays in sync with AGENTS guidance (now including `BILLING_WEBHOOK_SECRET` for the new billing webhook endpoint).
 - TMDB calls run through `/api/tmdb/*` routes, enforcing rate limits and caching movies back into Supabase.
 - UI components rely on consistent design tokens (rounded corners, slate/indigo palette) and expect Tailwind-style utility classes.
 - Profile usernames double as public route segments (`/c/:username/:slug`); keep slug helpers and server actions coordinated.
+- Plan enforcement is centralised in Supabase functions (`apply_subscription_change`, `compute_effective_plan`, `expire_lapsed_plans`). Server actions should call `computeEffectivePlan` before reading a profile to ensure deferred downgrades apply on access.
 
 ## Update Protocol
 - Whenever functionality, data contracts, or folder structure changes, update each affected `AGENTS.md` (root and nested) to reflect new responsibilities or dependencies.

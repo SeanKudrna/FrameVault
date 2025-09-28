@@ -4,12 +4,12 @@ import { Buffer } from "node:buffer";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { ApiError } from "@/lib/api";
-import { canCreateCollection, planGateMessage } from "@/lib/plan";
+import { canCreateCollection, computeEffectivePlan, planGateMessage } from "@/lib/plan";
 import { ensureUniqueSlug } from "@/lib/slugs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Collection, Database, Profile, WatchStatus } from "@/lib/supabase/types";
+import type { Collection, CollectionCollaborator, Database, Profile, WatchStatus } from "@/lib/supabase/types";
 
 /**
  * Payload used when creating a new collection from the dashboard.
@@ -35,6 +35,8 @@ async function getProfileOrThrow() {
     throw new ApiError("not_authenticated", "You need to sign in", 401);
   }
 
+  await computeEffectivePlan(supabase, user.id);
+
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
@@ -49,18 +51,83 @@ async function getProfileOrThrow() {
   return { profile: data as Profile, supabase, userId: user.id };
 }
 
+interface CollectionAccessResult {
+  isOwner: boolean;
+  collaboratorRole: string | null;
+  isCollaborator: boolean;
+}
+
 /**
- * Revalidates the public collection route when relevant data changes.
+ * Ensures the current member has edit rights over the target collection. Owners
+ * and collaborators with non-viewer roles are permitted. Throws when the
+ * collection is missing or inaccessible.
  */
-async function revalidatePublicCollection(profile: Profile, supabase: SupabaseClient<Database>, collectionId: string) {
-  const { data } = await supabase
+async function ensureCollectionEditorAccess(
+  supabase: SupabaseClient<Database>,
+  collectionId: string,
+  userId: string,
+  options?: { requireEdit?: boolean }
+): Promise<CollectionAccessResult> {
+  const { data, error } = await supabase
     .from("collections")
-    .select("slug, is_public")
+    .select("id, owner_id, collection_collaborators(user_id, role)")
     .eq("id", collectionId)
     .maybeSingle();
 
+  if (error) throw error;
+  if (!data) {
+    throw new ApiError("not_found", "Collection not found", 404);
+  }
+
+  const collaborators = Array.isArray(data.collection_collaborators)
+    ? (data.collection_collaborators as CollectionCollaborator[])
+    : [];
+
+  const collaborator = collaborators.find((row) => row.user_id === userId) ?? null;
+  const isOwner = data.owner_id === userId;
+  const isEditor = collaborator ? collaborator.role !== "viewer" : false;
+
+  const requireEdit = options?.requireEdit ?? true;
+  if (requireEdit) {
+    if (!isOwner && !isEditor) {
+      throw new ApiError("forbidden", "You do not have permission to edit this collection", 403);
+    }
+  } else if (!isOwner && !collaborator) {
+    throw new ApiError("forbidden", "You do not have access to this collection", 403);
+  }
+
+  return { isOwner, collaboratorRole: collaborator?.role ?? null, isCollaborator: Boolean(collaborator) };
+}
+
+/**
+ * Revalidates public collection paths for a given collection, ensuring new or
+ * previous slugs are refreshed when visibility changes. Uses the service role
+ * client so collaborators can trigger revalidation without needing owner
+ * context.
+ */
+async function revalidateCollectionCache(collectionId: string, options?: { previousSlug?: string | null }) {
+  const service = getSupabaseServiceRoleClient();
+  const { data, error } = await service
+    .from("collections")
+    .select("slug, is_public, owner:profiles!collections_owner_id_fkey(username)")
+    .eq("id", collectionId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to load collection for revalidation", error);
+    return;
+  }
+
+  const ownerUsername = data?.owner?.username as string | undefined;
+  if (!ownerUsername) return;
+
+  const previousSlug = options?.previousSlug ?? null;
+  if (previousSlug) {
+    revalidatePath(`/c/${ownerUsername}/${previousSlug}`);
+  }
+
   if (data?.is_public && data.slug) {
-    revalidatePath(`/c/${profile.username}/${data.slug}`);
+    revalidatePath(`/c/${ownerUsername}/${data.slug}`);
   }
 }
 
@@ -110,6 +177,9 @@ export async function createCollectionAction(input: CreateCollectionInput) {
   if (error) throw error;
 
   revalidatePath("/app");
+  if (data?.id) {
+    revalidatePath(`/app/collections/${data.id}`);
+  }
   return data as Collection;
 }
 
@@ -199,17 +269,9 @@ export async function updateCollectionDetailsAction({
 
   revalidatePath("/app");
   revalidatePath(`/collections/${collectionId}`);
-
-  const nextSlug = (updates.slug as string | undefined) ?? previousSlug;
-  const nextIsPublic =
-    typeof updates.is_public === "boolean" ? (updates.is_public as boolean) : wasPublic;
-
-  if (wasPublic) {
-    revalidatePath(`/c/${profile.username}/${previousSlug}`);
-  }
-  if (nextIsPublic) {
-    revalidatePath(`/c/${profile.username}/${nextSlug}`);
-  }
+  await revalidateCollectionCache(collectionId, {
+    previousSlug: wasPublic ? previousSlug : null,
+  });
 
   return { ok: true } as const;
 }
@@ -360,19 +422,10 @@ interface AddMovieInput {
  * Inserts a TMDB movie into a collection and caches its metadata.
  */
 export async function addMovieToCollectionAction(input: AddMovieInput) {
-  const { profile, supabase, userId } = await getProfileOrThrow();
+  const { supabase, userId } = await getProfileOrThrow();
   const { collectionId, movie } = input;
 
-  const ownerCheck = await supabase
-    .from("collections")
-    .select("owner_id")
-    .eq("id", collectionId)
-    .maybeSingle();
-
-  if (ownerCheck.error) throw ownerCheck.error;
-  if (!ownerCheck.data || ownerCheck.data.owner_id !== userId) {
-    throw new ApiError("forbidden", "You do not own this collection", 403);
-  }
+  await ensureCollectionEditorAccess(supabase, collectionId, userId);
 
   const { data: countData, error: countError } = await supabase
     .from("collection_items")
@@ -395,25 +448,42 @@ export async function addMovieToCollectionAction(input: AddMovieInput) {
   }
 
   const service = getSupabaseServiceRoleClient();
-  const { error: upsertError } = await service
+  const { data: existingMovie, error: existingMovieError } = await service
     .from("movies")
-    .upsert({
-      tmdb_id: movie.tmdbId,
-      title: movie.title,
-      release_year: movie.releaseYear,
-      poster_url: movie.posterUrl,
-      backdrop_url: movie.backdropUrl,
-      runtime: movie.runtime,
-      genres: movie.genres,
-      tmdb_json: {
-        overview: movie.overview,
-      },
-    });
+    .select("tmdb_json")
+    .eq("tmdb_id", movie.tmdbId)
+    .maybeSingle();
+  if (existingMovieError && existingMovieError.code !== "PGRST116") throw existingMovieError;
+
+  const mergedJson: Record<string, unknown> =
+    existingMovie?.tmdb_json && typeof existingMovie.tmdb_json === "object"
+      ? { ...(existingMovie.tmdb_json as Record<string, unknown>) }
+      : {};
+
+  if (movie.overview && !mergedJson.overview) {
+    mergedJson.overview = movie.overview;
+  }
+
+  const upsertPayload: Record<string, unknown> = {
+    tmdb_id: movie.tmdbId,
+    title: movie.title,
+    release_year: movie.releaseYear,
+    poster_url: movie.posterUrl,
+    backdrop_url: movie.backdropUrl,
+    runtime: movie.runtime,
+    genres: movie.genres,
+  };
+
+  if (Object.keys(mergedJson).length > 0) {
+    upsertPayload.tmdb_json = mergedJson;
+  }
+
+  const { error: upsertError } = await service.from("movies").upsert(upsertPayload, { onConflict: "tmdb_id" });
   if (upsertError) throw upsertError;
 
   revalidatePath(`/collections/${collectionId}`);
   revalidatePath("/app");
-  await revalidatePublicCollection(profile, supabase, collectionId);
+  await revalidateCollectionCache(collectionId);
   return { ok: true } as const;
 }
 
@@ -427,18 +497,8 @@ export async function removeCollectionItemAction({
   collectionItemId: string;
   collectionId: string;
 }) {
-  const { profile, supabase, userId } = await getProfileOrThrow();
-
-  const ownerCheck = await supabase
-    .from("collections")
-    .select("owner_id")
-    .eq("id", collectionId)
-    .maybeSingle();
-
-  if (ownerCheck.error) throw ownerCheck.error;
-  if (!ownerCheck.data || ownerCheck.data.owner_id !== userId) {
-    throw new ApiError("forbidden", "You do not own this collection", 403);
-  }
+  const { supabase, userId } = await getProfileOrThrow();
+  await ensureCollectionEditorAccess(supabase, collectionId, userId);
 
   const { error } = await supabase
     .from("collection_items")
@@ -448,7 +508,7 @@ export async function removeCollectionItemAction({
   if (error) throw error;
   revalidatePath(`/collections/${collectionId}`);
   revalidatePath("/app");
-  await revalidatePublicCollection(profile, supabase, collectionId);
+  await revalidateCollectionCache(collectionId);
   return { ok: true } as const;
 }
 
@@ -464,18 +524,8 @@ export async function updateCollectionItemNoteAction({
   note: string;
   collectionId: string;
 }) {
-  const { profile, supabase, userId } = await getProfileOrThrow();
-
-  const ownerCheck = await supabase
-    .from("collections")
-    .select("owner_id")
-    .eq("id", collectionId)
-    .maybeSingle();
-
-  if (ownerCheck.error) throw ownerCheck.error;
-  if (!ownerCheck.data || ownerCheck.data.owner_id !== userId) {
-    throw new ApiError("forbidden", "You do not own this collection", 403);
-  }
+  const { supabase, userId } = await getProfileOrThrow();
+  await ensureCollectionEditorAccess(supabase, collectionId, userId);
 
   const { error } = await supabase
     .from("collection_items")
@@ -484,7 +534,7 @@ export async function updateCollectionItemNoteAction({
     .eq("collection_id", collectionId);
   if (error) throw error;
   revalidatePath(`/collections/${collectionId}`);
-  await revalidatePublicCollection(profile, supabase, collectionId);
+  await revalidateCollectionCache(collectionId);
   return { ok: true } as const;
 }
 
@@ -498,18 +548,8 @@ export async function reorderCollectionItemsAction({
   collectionId: string;
   orderedIds: { id: string; position: number }[];
 }) {
-  const { profile, supabase, userId } = await getProfileOrThrow();
-
-  const ownerCheck = await supabase
-    .from("collections")
-    .select("owner_id")
-    .eq("id", collectionId)
-    .maybeSingle();
-
-  if (ownerCheck.error) throw ownerCheck.error;
-  if (!ownerCheck.data || ownerCheck.data.owner_id !== userId) {
-    throw new ApiError("forbidden", "You do not own this collection", 403);
-  }
+  const { supabase, userId } = await getProfileOrThrow();
+  await ensureCollectionEditorAccess(supabase, collectionId, userId);
 
   const existing = await supabase
     .from("collection_items")
@@ -536,6 +576,138 @@ export async function reorderCollectionItemsAction({
   const { error } = await supabase.from("collection_items").upsert(payload, { onConflict: "id" });
   if (error) throw error;
   revalidatePath(`/collections/${collectionId}`);
-  await revalidatePublicCollection(profile, supabase, collectionId);
+  await revalidateCollectionCache(collectionId);
+  return { ok: true } as const;
+}
+
+interface InviteCollaboratorInput {
+  collectionId: string;
+  identifier: string;
+  role?: "editor" | "viewer";
+}
+
+/**
+ * Invites a collaborator to a collection using their username or email. Only
+ * owners on the Pro plan can add collaborators.
+ */
+export async function inviteCollectionCollaboratorAction({ collectionId, identifier, role = "editor" }: InviteCollaboratorInput) {
+  const { profile, supabase, userId } = await getProfileOrThrow();
+
+  if (profile.plan !== "pro") {
+    throw new ApiError("plan_limit", "Upgrade to Pro to add collaborators", 403);
+  }
+
+  const access = await ensureCollectionEditorAccess(supabase, collectionId, userId);
+  if (!access.isOwner) {
+    throw new ApiError("forbidden", "Only owners can manage collaborators", 403);
+  }
+
+  const trimmed = identifier.trim();
+  if (!trimmed) {
+    throw new ApiError("validation_error", "Provide a username or email to invite", 400);
+  }
+
+  let targetProfile: Profile | null = null;
+  if (trimmed.includes("@")) {
+    const service = getSupabaseServiceRoleClient();
+    const { data, error } = await service.auth.admin.getUserByEmail(trimmed);
+    if (error) throw error;
+    const authUser = data?.user;
+    if (!authUser) {
+      throw new ApiError("not_found", "No FrameVault account matches that email", 404);
+    }
+    const profileResponse = await supabase.from("profiles").select("*").eq("id", authUser.id).maybeSingle();
+    if (profileResponse.error) throw profileResponse.error;
+    if (!profileResponse.data) {
+      throw new ApiError("profile_missing", "That member needs to finish onboarding before collaborating", 400);
+    }
+    targetProfile = profileResponse.data as Profile;
+  } else {
+    const profileResponse = await supabase
+      .from("profiles")
+      .select("*")
+      .ilike("username", trimmed)
+      .maybeSingle();
+    if (profileResponse.error) throw profileResponse.error;
+    if (!profileResponse.data) {
+      throw new ApiError("not_found", "No user with that username", 404);
+    }
+    targetProfile = profileResponse.data as Profile;
+  }
+
+  if (!targetProfile) {
+    throw new ApiError("not_found", "Unable to locate member", 404);
+  }
+
+  if (targetProfile.id === userId) {
+    throw new ApiError("validation_error", "You already own this collection", 400);
+  }
+
+  const existing = await supabase
+    .from("collection_collaborators")
+    .select("user_id")
+    .eq("collection_id", collectionId)
+    .eq("user_id", targetProfile.id)
+    .maybeSingle();
+  if (existing.error && existing.error.code !== "PGRST116") throw existing.error;
+  if (existing.data) {
+    throw new ApiError("conflict", "That collaborator is already added", 409);
+  }
+
+  const { error: insertError } = await supabase
+    .from("collection_collaborators")
+    .insert({
+      collection_id: collectionId,
+      owner_id: profile.id,
+      user_id: targetProfile.id,
+      role,
+    });
+  if (insertError) throw insertError;
+
+  revalidatePath(`/collections/${collectionId}`);
+  revalidatePath("/app");
+  await revalidateCollectionCache(collectionId);
+
+  return {
+    collaborator: {
+      id: targetProfile.id,
+      username: targetProfile.username,
+      displayName: targetProfile.display_name,
+      avatarUrl: targetProfile.avatar_url,
+      role,
+    },
+  } as const;
+}
+
+interface RemoveCollaboratorInput {
+  collectionId: string;
+  userId: string;
+}
+
+/**
+ * Removes a collaborator from a collection. Owners can remove anyone; collaborators may remove themselves.
+ */
+export async function removeCollectionCollaboratorAction({ collectionId, userId: collaboratorId }: RemoveCollaboratorInput) {
+  const { supabase, userId } = await getProfileOrThrow();
+  const isSelfRemoval = collaboratorId === userId;
+  const access = await ensureCollectionEditorAccess(supabase, collectionId, userId, {
+    requireEdit: !isSelfRemoval,
+  });
+
+  if (!access.isOwner && !isSelfRemoval) {
+    throw new ApiError("forbidden", "Only the owner can remove other collaborators", 403);
+  }
+
+  const { error } = await supabase
+    .from("collection_collaborators")
+    .delete()
+    .eq("collection_id", collectionId)
+    .eq("user_id", collaboratorId);
+  if (error) throw error;
+
+  revalidatePath(`/collections/${collectionId}`);
+  revalidatePath("/app");
+  await revalidateCollectionCache(collectionId);
+
   return { ok: true } as const;
 }

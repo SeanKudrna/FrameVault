@@ -36,7 +36,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { Eye, EyeOff, GripVertical, Plus, Trash2, Ellipsis, CheckCircle2, PlayCircle, BookmarkPlus, XCircle } from "lucide-react";
+import { Eye, EyeOff, GripVertical, Plus, Trash2, Ellipsis, CheckCircle2, PlayCircle, BookmarkPlus, XCircle, Tv, ChevronDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -57,10 +57,14 @@ import {
   updateCollectionItemNoteAction,
   setViewStatusAction,
   uploadCollectionCoverAction,
+  inviteCollectionCollaboratorAction,
+  removeCollectionCollaboratorAction,
 } from "@/app/(app)/collections/actions";
 import type { CollectionItemWithMovie } from "@/types/collection";
-import type { MovieSummary } from "@/lib/tmdb";
+import type { MovieSummary, WatchProviderGroup } from "@/lib/tmdb";
 import type { Profile, WatchStatus } from "@/lib/supabase/types";
+
+type ToastFn = ReturnType<typeof useToast>["toast"];
 
 /**
  * DOM id referenced by the drag-and-drop accessibility instructions element.
@@ -174,12 +178,48 @@ interface CollectionEditorProps {
   };
   profile: Profile;
   items: CollectionItemWithMovie[];
+  collaborators: CollaboratorSummary[];
+  isOwner: boolean;
+  viewerIsCollaborator: boolean;
+}
+
+interface CollaboratorSummary {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: string;
+}
+
+interface CollaboratorsPanelProps {
+  collaborators: CollaboratorSummary[];
+  owner: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
+  collectionId: string;
+  canManage: boolean;
+  isOwner: boolean;
+  viewerId: string;
+  viewerPlan: Profile["plan"];
+  viewerIsCollaborator: boolean;
+  toast: ToastFn;
+  router: ReturnType<typeof useRouter>;
 }
 
 /**
  * Full-featured editor for managing a collection's metadata and item order.
  */
-export function CollectionEditor({ collection, profile, items: initialItems }: CollectionEditorProps) {
+export function CollectionEditor({
+  collection,
+  profile,
+  items: initialItems,
+  collaborators,
+  isOwner,
+  viewerIsCollaborator,
+}: CollectionEditorProps) {
   const router = useRouter();
   const { toast } = useToast();
   const sensors = useSensors(
@@ -206,6 +246,7 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canCustomize = profile.plan !== "free";
+  const canManageCollaborators = isOwner && profile.plan === "pro";
 
   useEffect(() => {
     setItems(initialItems);
@@ -742,6 +783,24 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
         {error ? <p className="mt-4 text-sm text-rose-400">{error}</p> : null}
       </header>
 
+      <CollaboratorsPanel
+        collaborators={collaborators}
+        owner={{
+          id: profile.id,
+          username: profile.username,
+          displayName: profile.display_name,
+          avatarUrl: profile.avatar_url,
+        }}
+        collectionId={collection.id}
+        canManage={canManageCollaborators}
+        isOwner={isOwner}
+        viewerId={profile.id}
+        viewerPlan={profile.plan}
+        viewerIsCollaborator={viewerIsCollaborator}
+        toast={toast}
+        router={router}
+      />
+
       <section className="space-y-6">
         <h2 className="text-2xl font-semibold">Titles</h2>
         <DndContext
@@ -764,6 +823,8 @@ export function CollectionEditor({ collection, profile, items: initialItems }: C
                   onRemove={() => handleRemoveItem(item)}
                   onSaveNote={(note) => handleNoteSave(item, note)}
                   onUpdateStatus={(status, options) => handleUpdateStatus(item.tmdb_id, status, options)}
+                  plan={profile.plan}
+                  preferredRegion={profile.preferred_region}
                 />
               ))}
             </div>
@@ -795,17 +856,239 @@ interface SortableMovieCardProps {
   onRemove: () => void;
   onSaveNote: (note: string) => void;
   onUpdateStatus: (status: WatchStatus | null, options?: { watchedAt?: string | null }) => Promise<void>;
+  plan: Profile["plan"];
+  preferredRegion: string | null | undefined;
 }
 
 /**
  * Sortable wrapper that wires a movie card into the DnD context.
  */
+const CollaboratorsPanel = memo(function CollaboratorsPanel({
+  collaborators,
+  owner,
+  collectionId,
+  canManage,
+  isOwner,
+  viewerId,
+  viewerPlan,
+  viewerIsCollaborator,
+  toast,
+  router,
+}: CollaboratorsPanelProps) {
+  const [inviteValue, setInviteValue] = useState("");
+  const [invitePending, startInviteTransition] = useTransition();
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const entries = useMemo(() => {
+    const unique = new Map<string, {
+      id: string;
+      username: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      role: string;
+      isOwner: boolean;
+    }>();
+
+    unique.set(owner.id, {
+      id: owner.id,
+      username: owner.username,
+      displayName: owner.displayName,
+      avatarUrl: owner.avatarUrl,
+      role: "owner",
+      isOwner: true,
+    });
+
+    for (const collaborator of collaborators) {
+      if (collaborator.user_id === owner.id) continue;
+      unique.set(collaborator.user_id, {
+        id: collaborator.user_id,
+        username: collaborator.username,
+        displayName: collaborator.display_name,
+        avatarUrl: collaborator.avatar_url,
+        role: collaborator.role,
+        isOwner: false,
+      });
+    }
+
+    return Array.from(unique.values());
+  }, [collaborators, owner]);
+
+  const handleInvite = useCallback(
+    (event: React.FormEvent) => {
+      event.preventDefault();
+      const value = inviteValue.trim();
+      if (!value) {
+        toast({
+          title: "Enter a collaborator",
+          description: "Share a username or email to send an invite.",
+          variant: "info",
+        });
+        return;
+      }
+
+      startInviteTransition(async () => {
+        try {
+          await inviteCollectionCollaboratorAction({
+            collectionId,
+            identifier: value,
+          });
+          toast({
+            title: "Invite sent",
+            description: "We’ve added that collaborator to your collection.",
+            variant: "success",
+          });
+          setInviteValue("");
+          router.refresh();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to invite collaborator";
+          toast({ title: "Invite failed", description: message, variant: "error" });
+        }
+      });
+    },
+    [collectionId, inviteValue, router, toast]
+  );
+
+  const handleRemove = useCallback(
+    (userId: string) => {
+      const isSelf = userId === viewerId;
+      setRemovingId(userId);
+      startInviteTransition(async () => {
+        try {
+          await removeCollectionCollaboratorAction({ collectionId, userId });
+          toast({
+            title: isSelf ? "You left the collection" : "Collaborator removed",
+            description: isSelf
+              ? "You no longer have access to this collection."
+              : "They’ll no longer be able to curate with you.",
+            variant: "success",
+          });
+          if (isSelf && !isOwner) {
+            router.push("/app");
+          } else {
+            router.refresh();
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to update collaborators";
+          toast({ title: "Action failed", description: message, variant: "error" });
+        } finally {
+          setRemovingId(null);
+        }
+      });
+    },
+    [collectionId, isOwner, router, toast, viewerId]
+  );
+
+  const initials = useCallback((displayName: string | null, username: string) => {
+    const reference = displayName?.trim() || username;
+    const parts = reference.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return username.slice(0, 2).toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }, []);
+
+  const showPlanGate = isOwner && viewerPlan !== "pro";
+
+  return (
+    <section className="space-y-4 rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_18px_70px_-60px_rgba(15,23,42,0.8)]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-100">Collaborators</h2>
+          <p className="text-sm text-slate-400">Invite trusted curators to help maintain this collection.</p>
+        </div>
+        {isOwner ? (
+          <span className="text-xs uppercase tracking-[0.3em] text-indigo-200/70">Pro feature</span>
+        ) : null}
+      </div>
+
+      {showPlanGate ? (
+        <PlanGate
+          title="Upgrade required"
+          message="Co-curation is part of the Pro toolkit. Upgrade to manage collaborators."
+          href="/settings/billing?plan=pro"
+          ctaLabel="Upgrade to Pro"
+        />
+      ) : null}
+
+      {canManage ? (
+        <form className="flex flex-col gap-3 rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4 md:flex-row md:items-center" onSubmit={handleInvite}>
+          <div className="flex-1">
+            <label className="text-xs uppercase tracking-[0.28em] text-slate-500">Invite by username or email</label>
+            <Input
+              value={inviteValue}
+              onChange={(event) => setInviteValue(event.target.value)}
+              placeholder="@centuryclub or curator@example.com"
+              className="mt-2"
+            />
+          </div>
+          <Button type="submit" disabled={invitePending} className="mt-2 md:mt-6">
+            {invitePending ? "Sending..." : "Send invite"}
+          </Button>
+        </form>
+      ) : null}
+
+      <div className="space-y-3">
+        {entries.map((entry) => {
+          const isSelf = entry.id === viewerId;
+          const canRemove = entry.id !== owner.id && (canManage || isSelf);
+          const badgeLabel = entry.isOwner ? "Owner" : entry.role === "editor" ? "Editor" : entry.role;
+          return (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between rounded-2xl border border-slate-800/60 bg-slate-900/40 p-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800/80 text-sm font-semibold text-slate-200">
+                  {initials(entry.displayName, entry.username)}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-100">{entry.displayName ?? entry.username}</p>
+                  <p className="text-xs text-slate-500">@{entry.username}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs",
+                    entry.isOwner
+                      ? "border-indigo-400/50 bg-indigo-500/10 text-indigo-100"
+                      : "border-slate-700/60 bg-slate-800/60 text-slate-300"
+                  )}
+                >
+                  {badgeLabel}
+                </span>
+                {canRemove ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemove(entry.id)}
+                    disabled={removingId === entry.id}
+                  >
+                    {isSelf ? "Leave" : "Remove"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!entries.length ? <div className="text-sm text-slate-400">No collaborators yet.</div> : null}
+      {!isOwner && !viewerIsCollaborator ? (
+        <div className="text-xs text-slate-500">Only collaborators invited by the owner can edit this collection.</div>
+      ) : null}
+    </section>
+  );
+});
+
 const SortableMovieCard = memo(function SortableMovieCard({
   item,
   onRemove,
   onSaveNote,
   onUpdateStatus,
+  plan,
+  preferredRegion,
 }: SortableMovieCardProps) {
+  const region = (preferredRegion?.trim() || "US").toUpperCase();
   const {
     attributes,
     listeners,
@@ -818,10 +1101,56 @@ const SortableMovieCard = memo(function SortableMovieCard({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const [dragHandleDescribedBy, setDragHandleDescribedBy] = useState<string | undefined>(
+    () => (attributes?.["aria-describedby"] as string | undefined) ?? undefined
+  );
+
+  useEffect(() => {
+    const describedBy = attributes?.["aria-describedby"] as string | undefined;
+    if (describedBy && describedBy !== dragHandleDescribedBy) {
+      setDragHandleDescribedBy(describedBy);
+    }
+  }, [attributes, dragHandleDescribedBy]);
+
+  const dragHandleProps = useMemo(() => {
+    const { ["aria-describedby"]: _ignored, ...restAttributes } = (attributes ?? {}) as Record<string, unknown>;
+    return {
+      ...restAttributes,
+      ...(listeners ?? {}),
+      ...(dragHandleDescribedBy ? { ["aria-describedby"]: dragHandleDescribedBy } : {}),
+    };
+  }, [attributes, listeners, dragHandleDescribedBy]);
   const [note, setNote] = useState(item.note ?? "");
   const [status, setStatus] = useState<WatchStatus | null>(item.viewStatus ?? null);
   const [watchedAt, setWatchedAt] = useState<string | null>(item.watchedAt ?? null);
   const [statusPending, setStatusPending] = useState(false);
+  const [providersVisible, setProvidersVisible] = useState(false);
+  const [providersLoading, setProvidersLoading] = useState(false);
+  const [providersError, setProvidersError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<WatchProviderGroup | null>(null);
+  const isPro = plan === "pro";
+
+  const loadProviders = useCallback(async () => {
+    if (providers || providersLoading) return;
+    setProvidersLoading(true);
+    setProvidersError(null);
+    try {
+      const response = await fetch(
+        `/api/tmdb/providers?movieId=${item.tmdb_id}&region=${region}`
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.message ?? "Unable to load providers");
+      }
+      const payload = (await response.json()) as { providers: WatchProviderGroup | null };
+      setProviders(payload.providers ?? null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load providers";
+      setProvidersError(message);
+    } finally {
+      setProvidersLoading(false);
+    }
+  }, [item.tmdb_id, region, providers, providersLoading]);
 
   useEffect(() => {
     setNote(item.note ?? "");
@@ -874,11 +1203,46 @@ const SortableMovieCard = memo(function SortableMovieCard({
         watchedAt={watchedAt}
         onUpdateStatus={handleStatusChange}
         statusPending={statusPending}
-        dragHandleProps={{
-          ...attributes,
-          ...listeners,
-        }}
+        dragHandleProps={dragHandleProps}
       />
+      {isPro ? (
+        <div className="border-t border-slate-800/60 pt-4">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded-2xl border border-slate-800/60 bg-slate-900/40 px-4 py-3 text-sm font-medium text-slate-200 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 hover:text-indigo-50"
+            onClick={() => {
+              const next = !providersVisible;
+              setProvidersVisible(next);
+              if (next) {
+                void loadProviders();
+              }
+            }}
+          >
+            <span className="flex items-center gap-2">
+              <Tv size={16} />
+              Streaming availability
+              <span className="text-xs text-slate-500">Region {region}</span>
+            </span>
+            <ChevronDown
+              size={16}
+              className={`transition-transform ${providersVisible ? "rotate-180" : ""}`}
+            />
+          </button>
+          {providersVisible ? (
+            <div className="mt-3 space-y-3 text-sm text-slate-200">
+              {providersLoading ? (
+                <p className="text-slate-400">Checking providers...</p>
+              ) : providersError ? (
+                <p className="text-rose-400">{providersError}</p>
+              ) : providers ? (
+                <ProvidersList providers={providers} />
+              ) : (
+                <p className="text-slate-400">No streaming providers reported for this title.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 });
@@ -961,6 +1325,7 @@ function MovieCardBody({
             alt={item.movie?.title ?? "Poster"}
             sizes="120px"
             tmdbId={item.movie?.tmdbId ?? null}
+            className="h-full w-full"
           />
         </div>
         <div className="flex-1 space-y-2">
@@ -1068,6 +1433,58 @@ function MovieCardBody({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+interface ProvidersListProps {
+  providers: WatchProviderGroup;
+}
+
+function ProvidersList({ providers }: ProvidersListProps) {
+  const groups: Array<{ key: "stream" | "rent" | "buy"; label: string; providers: WatchProviderGroup["stream"] }>
+    = [
+      { key: "stream", label: "Included with streaming", providers: providers.stream },
+      { key: "rent", label: "Rent", providers: providers.rent },
+      { key: "buy", label: "Buy", providers: providers.buy },
+    ];
+
+  const hasAny = groups.some((group) => Array.isArray(group.providers) && group.providers.length > 0);
+  if (!hasAny) {
+    return <p className="text-sm text-slate-400">No providers available in this region right now.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => {
+        const list = Array.isArray(group.providers) ? group.providers : [];
+        if (!list.length) return null;
+        return (
+          <div key={group.key} className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{group.label}</p>
+            <div className="flex flex-wrap gap-2">
+              {list.map((provider) => (
+                <span
+                  key={provider.id}
+                  className="flex items-center gap-2 rounded-full border border-slate-800/60 bg-slate-900/60 px-3 py-1 text-xs text-slate-200"
+                >
+                  {provider.logoUrl ? (
+                    <Image
+                      src={provider.logoUrl}
+                      alt={provider.name}
+                      width={18}
+                      height={18}
+                      className="h-[18px] w-[18px] rounded"
+                      unoptimized
+                    />
+                  ) : null}
+                  {provider.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

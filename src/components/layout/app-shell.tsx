@@ -5,7 +5,7 @@
  * sign-out controls. Client-side to access Supabase context helpers.
  */
 
-import { CreditCard, Film, History, LayoutDashboard, LogOut, Settings } from "lucide-react";
+import { BarChart3, Compass, CreditCard, Film, History, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ interface AppShellProps {
  */
 const navItems = [
   { href: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/discover", label: "Discover", icon: Compass },
+  { href: "/analytics", label: "Analytics", icon: BarChart3, plan: "pro" as const },
   { href: "/app/history", label: "History", icon: History },
   { href: "/settings/profile", label: "Profile", icon: Settings },
   { href: "/settings/billing", label: "Billing", icon: CreditCard },
@@ -53,10 +55,12 @@ export function AppShell({ children, profile }: AppShellProps) {
           </div>
 
           <nav className="flex flex-col gap-1 text-sm">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
+            {navItems
+              .filter((item) => !item.plan || item.plan === profile.plan)
+              .map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
                 <Link
                   key={item.href}
                   href={item.href}

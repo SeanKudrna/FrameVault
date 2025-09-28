@@ -5,6 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { BillingSettings } from "@/components/billing/billing-settings";
+import { computeEffectivePlan } from "@/lib/plan";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Plan, Profile } from "@/lib/supabase/types";
 
@@ -25,13 +26,18 @@ export default async function BillingSettingsPage({ searchParams }: PageProps) {
     redirect("/auth/sign-in");
   }
 
+  await computeEffectivePlan(supabase, user.id);
+
   const [{ data: profileData, error: profileError }, { data: subscriptionData, error: subscriptionError }] =
     await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       supabase
         .from("subscriptions")
-        .select("plan, status, current_period_end")
+        .select("plan, status, current_period_end, cancel_at_period_end, pending_plan, ended_at")
         .eq("user_id", user.id)
+        .eq("provider", "stripe")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle(),
     ]);
 
@@ -52,6 +58,9 @@ export default async function BillingSettingsPage({ searchParams }: PageProps) {
         plan: (subscriptionData.plan as Plan) ?? "free",
         status: subscriptionData.status,
         current_period_end: subscriptionData.current_period_end,
+        cancel_at_period_end: Boolean(subscriptionData.cancel_at_period_end),
+        pending_plan: (subscriptionData.pending_plan as Plan | null) ?? null,
+        ended_at: subscriptionData.ended_at,
       }
     : null;
 

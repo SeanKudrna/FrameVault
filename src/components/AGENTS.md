@@ -6,10 +6,13 @@ Reusable React components live here, organized by domain (auth, collections, lay
 ## Key Subdirectories
 - `auth/` — Authentication forms and related UI.
 - `collections/` — Dashboard and editor surfaces handling collection CRUD.
+- `analytics/` — Pro analytics dashboard visualisations.
+- `discover/` — Discovery grid and curator profile components.
 - `layout/` — Application shell components such as side navigation.
 - `media/` — Media presentation helpers (`PosterImage`).
 - `plan/` — Components that communicate plan limitations.
 - `profile/` — Profile management forms.
+- `onboarding/` — Guided setup flow UI for new members.
 - `providers/` — React context providers (Supabase, React Query, Toasts).
 - `ui/` — Shared primitives (buttons, inputs, toasts, etc.).
 

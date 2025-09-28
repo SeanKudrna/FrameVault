@@ -6,10 +6,10 @@
  * and dialogs.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,11 @@ import {
 } from "@/app/(app)/collections/actions";
 import type { Profile } from "@/lib/supabase/types";
 import { planGateMessage, PLAN_COLLECTION_LIMIT, canCreateCollection } from "@/lib/plan";
+import type { SmartPick, TasteProfile } from "@/lib/recommendations";
+import { PosterImage } from "@/components/media/poster-image";
+import { cn } from "@/lib/utils";
+
+const SMART_PICKS_STATE_KEY = "framevault:smart-picks-open";
 
 /**
  * Lightweight projection of a collection used within the dashboard grid.
@@ -45,12 +50,14 @@ export interface CollectionSummary {
 interface CollectionsDashboardProps {
   profile: Profile;
   collections: CollectionSummary[];
+  recommendations?: SmartPick[] | null;
+  tasteProfile?: TasteProfile | null;
 }
 
 /**
  * Renders the authenticated dashboard with create dialogs, plan gating, and collection cards.
  */
-export function CollectionsDashboard({ profile, collections }: CollectionsDashboardProps) {
+export function CollectionsDashboard({ profile, collections, recommendations, tasteProfile }: CollectionsDashboardProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -58,6 +65,27 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
   const [formDescription, setFormDescription] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    const storedValue = window.localStorage.getItem(SMART_PICKS_STATE_KEY);
+
+    if (storedValue === null) {
+      return true;
+    }
+
+    return storedValue === "true";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(SMART_PICKS_STATE_KEY, smartPicksOpen ? "true" : "false");
+  }, [smartPicksOpen]);
 
   const limit = PLAN_COLLECTION_LIMIT[profile.plan] ?? Infinity;
   // Plan gating logic ensures the UI matches server enforcement before the
@@ -104,6 +132,65 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
 
   return (
     <div className="space-y-8">
+      {profile.plan === "pro" ? (
+        <section
+          className={cn(
+            "rounded-3xl border border-slate-800/60 bg-slate-950/70 px-6 shadow-[0_24px_80px_-60px_rgba(15,23,42,0.8)]",
+            smartPicksOpen ? "space-y-6 pt-4 pb-6" : "space-y-3 pt-4 pb-1"
+          )}
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-100">Smart Picks for You</h2>
+              <p className="text-sm text-slate-400">
+                {tasteProfile?.topGenres?.length
+                  ? `Inspired by your love of ${tasteProfile.topGenres
+                      .slice(0, 2)
+                      .map((genre) => genre.name)
+                      .join(" & " )}`
+                  : "Watch and curate more films to fine-tune your picks."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs uppercase tracking-[0.32em] text-indigo-200/80">Pro Exclusive</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setSmartPicksOpen((previous) => !previous)}
+                className="gap-2 text-xs text-indigo-200 hover:text-indigo-50"
+                aria-expanded={smartPicksOpen}
+                aria-controls="smart-picks-panel"
+              >
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform ${smartPicksOpen ? "rotate-180" : "rotate-0"}`}
+                />
+                {smartPicksOpen ? "Hide" : "Show"}
+              </Button>
+            </div>
+          </div>
+          {smartPicksOpen ? (
+            recommendations && recommendations.length > 0 ? (
+              <div id="smart-picks-panel" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {recommendations.map((pick) => (
+                  <SmartPickCard key={pick.movie.tmdbId} pick={pick} />
+                ))}
+              </div>
+            ) : (
+              <div
+                id="smart-picks-panel"
+                className="rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/40 p-8 text-center text-sm text-slate-400"
+              >
+                Add a few more ratings or build out your shelves to unlock tailored recommendations.
+              </div>
+            )
+          ) : (
+            <div id="smart-picks-panel" className="hidden" aria-hidden="true" />
+          )}
+        </section>
+      ) : null}
+
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold">Your collections</h1>
@@ -209,6 +296,60 @@ export function CollectionsDashboard({ profile, collections }: CollectionsDashbo
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+interface SmartPickCardProps {
+  pick: SmartPick;
+}
+
+function SmartPickCard({ pick }: SmartPickCardProps) {
+  const releaseYear = pick.movie.releaseYear ? `• ${pick.movie.releaseYear}` : "";
+  return (
+    <div className="group flex gap-4 overflow-hidden rounded-3xl border border-slate-800/70 bg-slate-900/40 p-4 transition-shadow hover:shadow-[0_24px_60px_-40px_rgba(129,140,248,0.6)]">
+      <PosterImage
+        src={pick.movie.posterUrl ?? pick.movie.fallbackPosterUrl ?? null}
+        alt={pick.movie.title}
+        className="h-[180px] w-[120px] flex-shrink-0 rounded-2xl"
+        imageClassName="rounded-2xl"
+      />
+      <div className="flex min-w-0 flex-1 flex-col justify-between">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold leading-tight text-slate-100 break-words">
+            {pick.movie.title}
+          </h3>
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+            Smart Pick {releaseYear}
+          </p>
+          {pick.rationale.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {pick.rationale.map((reason, index) => (
+                <span
+                  key={`${reason}-${index}`}
+                  className="max-w-full rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 leading-snug"
+                >
+                  {reason}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          <a
+            href={`https://www.themoviedb.org/movie/${pick.movie.tmdbId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-indigo-200 transition-colors hover:text-indigo-100"
+          >
+            View on TMDB
+          </a>
+          <span aria-hidden="true" className="hidden sm:inline">
+            •
+          </span>
+          <span>{pick.movie.runtime ? `${pick.movie.runtime} min` : "Feature"}</span>
+        </div>
+      </div>
     </div>
   );
 }

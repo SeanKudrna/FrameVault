@@ -34,7 +34,10 @@ interface RateLimitActor {
  * Any unexpected Supabase error is rethrown to surface infrastructure issues
  * loudly.
  */
-export async function enforceRateLimit(bucket: "search" | "movie" | "export", actors: RateLimitActor[]) {
+export async function enforceRateLimit(
+  bucket: "search" | "movie" | "export" | "providers" | "recommendations",
+  actors: RateLimitActor[]
+) {
   const supabase = getSupabaseServiceRoleClient();
   const now = Date.now();
   const windowStart = new Date(Math.floor(now / WINDOW_MS) * WINDOW_MS);

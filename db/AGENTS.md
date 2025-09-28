@@ -5,12 +5,16 @@ This folder contains the Supabase SQL migration (`supabase.sql`) that establishe
 
 ## Key Elements
 - `supabase.sql` creates:
-  - `profiles` table mirroring `auth.users`, with triggers to maintain `updated_at`.
-  - `collections` with slug history, lowercase enforcement, and publication flags.
-  - `collection_items` linking collections to TMDB titles with positional ordering.
-  - `movies` cache for TMDB payloads, including fallback poster metadata.
+- `profiles` table mirroring `auth.users`, with triggers to maintain `updated_at`.
+  - Columns now include `preferred_region` (streaming locale) and `onboarding_state` (JSON) so onboarding and streaming features stay in sync.
+  - Deferred downgrade support adds `plan_expires_at`, `next_plan`, and `plan_source` so the effective plan can be resolved without race conditions.
+- `collections` with slug history, lowercase enforcement, and publication flags.
+  - `collection_collaborators` introduces role-based co-curation, paired with updated RLS policies that allow owners and invited editors to manage items.
+- `collection_items` linking collections to TMDB titles with positional ordering.
+- `movies` cache for TMDB payloads, including fallback poster metadata.
+  - Adds `watch_providers` JSON cache plus a GIN index for efficient provider lookups.
   - `view_logs` for per-user watch statuses (used by Day 2 logging UI).
-  - `subscriptions` tracking Stripe subscription ids, status, and plan metadata.
+  - `subscriptions` tracking Stripe subscription ids, status, pending plan metadata, and linking to Supabase profiles via triggers that sync plan state.
   - `stripe_webhook_events` for webhook idempotency.
   - `tmdb_rate_limit` shared bucket supporting TMDB proxy and export rate limiting.
   - Storage bootstrap that upserts a public `covers` bucket for collection cover uploads.
@@ -20,8 +24,11 @@ This folder contains the Supabase SQL migration (`supabase.sql`) that establishe
 - The schema expects Supabase auth to be enabled; triggers rely on Postgres functions defined early in the script.
 - Rate limit enforcement in `src/lib/rate-limit.ts` assumes the presence of `tmdb_rate_limit` table defined here.
 - Maintain idempotency: the script uses `if not exists` safeguards to support repeat execution.
+- Plan enforcement relies on new functions (`apply_subscription_change`, `compute_effective_plan`, `expire_lapsed_plans`) plus the `subscriptions_sync_profile` trigger. Update these in tandem with any application-side plan logic.
+- Indexes now cover collaborative lookups (`collection_collaborators`), public collection discovery (`idx_collections_public_updated_at`, follower indexes), and analytics queries (`view_logs`/`movies` additions).
 
 ## Update Protocol
 - Any schema or trigger changes must be mirrored here and communicated to downstream consumers (server actions, types, Supabase client types).
 - After altering schema elements, regenerate TypeScript types (`src/lib/supabase/types.ts`) and adjust AGENTS documentation wherever affected data is consumed.
 - Ensure this file stays synchronized with production Supabase migrations; update AGENTS whenever new tables or behaviors are introduced.
+- Incremental SQL lives under `db/migrations`; run migrations in chronological order before relying on the consolidated schema.

@@ -5,6 +5,7 @@ This directory defines the authenticated dashboard route served at `/app`. It ac
 
 ## Key File
 - `page.tsx` fetches the current Supabase user and their profile, queries owned collections (including counts via `collection_items`), and renders `CollectionsDashboard` with the aggregated data.
+  - Redirects members who haven't completed onboarding to `/app/onboarding` before loading dashboard content.
 
 ## Integration Notes
 - Redirects unauthenticated users to `/auth/sign-in` and users without profiles to `/settings/profile`.

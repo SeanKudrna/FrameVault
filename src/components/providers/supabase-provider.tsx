@@ -176,6 +176,42 @@ export function SupabaseProvider({
     }
   }, [supabase]);
 
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`profile-plan-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${userId}`,
+        },
+        (payload) => {
+          const next = (payload.new ?? null) as Profile | null;
+          if (!next) {
+            return;
+          }
+          setProfile((current) => {
+            if (current && current.id === next.id && current.plan === next.plan) {
+              return current;
+            }
+            return next;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [supabase, session?.user?.id]);
+
   const signOut = useCallback(async () => {
     try {
       await signOutAction();

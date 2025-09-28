@@ -7,6 +7,7 @@ Media-focused UI helpers live here. They handle poster rendering, fallbacks, and
 - `poster-image.tsx` (`PosterImage`):
   - Client component wrapping `next/image` to load TMDB posters with graceful fallbacks.
   - Tracks failure state, cycles through TMDB sizes, and optionally refetches via `/api/tmdb/movie?refresh=1` when assets fail.
+  - Renders inside a `relative` wrapper (with optional `imageClassName`) so consumers get proper sizing/rounding while the image uses `fill` for responsive cropping.
   - Uses `/images/poster-placeholder.svg` as an ultimate fallback.
 
 ## Update Protocol

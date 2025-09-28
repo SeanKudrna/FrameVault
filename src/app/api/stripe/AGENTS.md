@@ -13,7 +13,7 @@ Stripe webhook handlers live here. They verify incoming events, enforce idempote
 1. Verify the signature with `STRIPE_WEBHOOK_SECRET`.
 2. Ignore events outside the supported list.
 3. If the event id already exists in `public.stripe_webhook_events`, return early.
-4. Upsert the `public.subscriptions` row, then update `public.profiles.plan` and `stripe_customer_id`.
+4. Upsert the `public.subscriptions` row (skipping stale cancellation events that refer to an older subscription id), then update `public.profiles.plan` and `stripe_customer_id`.
 5. Record the processed event id for idempotency and revalidate relevant Next.js routes (`/app`, `/settings/billing`, `/settings/profile`).
 
 ## Update Protocol

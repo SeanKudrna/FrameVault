@@ -24,6 +24,26 @@ export function SignInForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function waitForSession({ maxAttempts = 25, delayMs = 200 } = {}) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        if (attempt === maxAttempts - 1) {
+          throw error;
+        }
+      } else if (data.session) {
+        void refreshSession().catch(() => undefined);
+        return data.session;
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Handles form submission by performing either a password sign-in or sign-up
    * request, then refreshing the session context so protected routes render
@@ -39,6 +59,8 @@ export function SignInForm() {
         throw new Error("Email and password are required");
       }
 
+      let shouldAwaitSession = true;
+
       if (mode === "sign-in") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -46,15 +68,41 @@ export function SignInForm() {
         });
         if (signInError) throw signInError;
       } else {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
         });
         if (signUpError) throw signUpError;
+
+        shouldAwaitSession = Boolean(signUpData.session);
+
+        if (!shouldAwaitSession) {
+          setLoading(false);
+          const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email)}`;
+          router.replace(verifyEmailUrl);
+          setMode("sign-in");
+          return;
+        }
       }
 
-      await refreshSession();
+      const session = shouldAwaitSession
+        ? await waitForSession({ maxAttempts: mode === "sign-in" ? 30 : 20 })
+        : null;
+
+      if (!session) {
+        if (mode === "sign-in") {
+          throw new Error("We couldn’t verify your session yet. Please try again.");
+        }
+
+        const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email)}`;
+        setLoading(false);
+        router.replace(verifyEmailUrl);
+        setMode("sign-in");
+        return;
+      }
+
       router.replace("/app");
+      router.refresh();
     } catch (err) {
       setError(formatError(err));
     } finally {

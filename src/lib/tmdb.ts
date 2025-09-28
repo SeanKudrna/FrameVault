@@ -17,6 +17,7 @@ import { getClientIp } from "@/lib/request";
  * is still fresh enough to serve without contacting TMDB again.
  */
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const PROVIDERS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Server environment variables captured once to avoid repeated lookups.
@@ -39,6 +40,21 @@ export interface MovieSummary {
   voteAverage: number | null;
 }
 
+export interface ProviderBadge {
+  id: number;
+  name: string;
+  logoUrl: string | null;
+}
+
+export interface WatchProviderGroup {
+  region: string;
+  link: string | null;
+  stream: ProviderBadge[];
+  rent: ProviderBadge[];
+  buy: ProviderBadge[];
+  availableRegions: string[];
+}
+
 interface TMDBMovieResult {
   id: number;
   title?: string;
@@ -55,6 +71,20 @@ interface TMDBMovieResult {
   vote_average?: number | null;
   vote_count?: number | null;
   popularity?: number | null;
+  credits?: {
+    cast?: Array<{
+      id: number;
+      name?: string;
+      character?: string;
+      order?: number;
+    }>;
+    crew?: Array<{
+      id: number;
+      name?: string;
+      job?: string;
+      department?: string;
+    }>;
+  };
 }
 
 interface TMDBImagesResult {
@@ -66,6 +96,24 @@ interface TMDBImagesResult {
     width?: number | null;
     height?: number | null;
   }>;
+}
+
+interface TMDBWatchProvider {
+  provider_id: number;
+  provider_name?: string;
+  logo_path?: string | null;
+  display_priority?: number | null;
+}
+
+interface TMDBWatchProviderRegion {
+  link?: string;
+  flatrate?: TMDBWatchProvider[];
+  rent?: TMDBWatchProvider[];
+  buy?: TMDBWatchProvider[];
+}
+
+interface TMDBWatchProvidersResponse {
+  results?: Record<string, TMDBWatchProviderRegion | undefined>;
 }
 
 /**
@@ -227,6 +275,63 @@ function computeSearchScore(result: TMDBMovieResult, query: string) {
   return titleScore + popularityScore + voteAverageScore + voteCountScore + recencyScore;
 }
 
+function normaliseRegion(region: string) {
+  return region?.toUpperCase() || "US";
+}
+
+function mapProviderList(list?: TMDBWatchProvider[]) {
+  if (!Array.isArray(list)) return [] as ProviderBadge[];
+
+  return list
+    .filter((provider): provider is TMDBWatchProvider => Boolean(provider?.provider_id))
+    .sort((a, b) => {
+      const aPriority = a.display_priority ?? 999;
+      const bPriority = b.display_priority ?? 999;
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
+      }
+      const aName = a.provider_name ?? "";
+      const bName = b.provider_name ?? "";
+      return aName.localeCompare(bName);
+    })
+    .slice(0, 12)
+    .map((provider) => ({
+      id: provider.provider_id,
+      name: provider.provider_name ?? "Unknown",
+      logoUrl: buildImage(provider.logo_path, "w154"),
+    }));
+}
+
+function mapWatchProvidersPayload(payload: TMDBWatchProvidersResponse | null, preferredRegion: string): WatchProviderGroup | null {
+  const results = payload?.results ?? {};
+  const availableRegions = Object.keys(results).sort();
+
+  if (availableRegions.length === 0) {
+    return null;
+  }
+
+  const target = normaliseRegion(preferredRegion);
+  const regionKey = results[target]
+    ? target
+    : results.US
+    ? "US"
+    : availableRegions[0];
+
+  const region = results[regionKey];
+  if (!region) {
+    return null;
+  }
+
+  return {
+    region: regionKey,
+    link: region.link ?? null,
+    stream: mapProviderList(region.flatrate),
+    rent: mapProviderList(region.rent),
+    buy: mapProviderList(region.buy),
+    availableRegions,
+  };
+}
+
 /**
  * Persists the provided movies in Supabase so future requests can serve cached metadata quickly.
  */
@@ -279,6 +384,98 @@ async function tmdbFetch<T>(endpoint: string, params: Record<string, string | nu
   }
 
   return (await response.json()) as T;
+}
+
+/**
+ * Loads streaming availability information for a movie, caching TMDB responses
+ * in Supabase to avoid repeated network calls. Falls back to cached results if
+ * TMDB is unavailable.
+ */
+export async function fetchWatchProviders(
+  tmdbId: number,
+  region = "US",
+  forceRefresh = false
+): Promise<WatchProviderGroup | null> {
+  const service = getSupabaseServiceRoleClient();
+  const { data: cachedRow, error: cachedError } = await service
+    .from("movies")
+    .select("watch_providers, updated_at")
+    .eq("tmdb_id", tmdbId)
+    .maybeSingle();
+
+  if (cachedError && cachedError.code !== "PGRST116") {
+    throw cachedError;
+  }
+
+  let payload = (cachedRow?.watch_providers ?? null) as TMDBWatchProvidersResponse | null;
+  const updatedAtMs = cachedRow?.updated_at ? Date.parse(cachedRow.updated_at) : 0;
+  const isStale =
+    forceRefresh ||
+    !payload ||
+    !updatedAtMs ||
+    Date.now() - updatedAtMs > PROVIDERS_TTL_MS;
+
+  if (isStale) {
+    try {
+      const fresh = await tmdbFetch<TMDBWatchProvidersResponse>(`movie/${tmdbId}/watch/providers`);
+      payload = fresh;
+
+      if (cachedRow) {
+        const { error } = await service
+          .from("movies")
+          .update({ watch_providers: fresh })
+          .eq("tmdb_id", tmdbId);
+        if (error) throw error;
+      } else {
+        const { error } = await service
+          .from("movies")
+          .insert({ tmdb_id: tmdbId, watch_providers: fresh });
+        if (error) throw error;
+      }
+    } catch (error) {
+      if (!payload) {
+        throw error;
+      }
+      console.warn("TMDB providers refresh failed; serving cached data", error);
+    }
+  }
+
+  return mapWatchProvidersPayload(payload, region);
+}
+
+export interface DiscoverMoviesParams {
+  withGenres?: number[];
+  voteAverageGte?: number;
+  voteCountGte?: number;
+  releaseDateGte?: string;
+  sortBy?: string;
+  page?: number;
+}
+
+/**
+ * Wraps TMDB's `/discover/movie` endpoint and caches summaries in Supabase.
+ */
+export async function discoverMovies(params: DiscoverMoviesParams): Promise<MovieSummary[]> {
+  const query: Record<string, string | number | boolean | undefined> = {
+    include_adult: false,
+    language: "en-US",
+    sort_by: params.sortBy ?? "popularity.desc",
+    page: params.page ?? 1,
+    vote_average_gte: params.voteAverageGte ?? 6,
+    vote_count_gte: params.voteCountGte ?? 200,
+  };
+
+  if (params.withGenres?.length) {
+    query.with_genres = params.withGenres.slice(0, 3).join(",");
+  }
+  if (params.releaseDateGte) {
+    query["primary_release_date.gte"] = params.releaseDateGte;
+  }
+
+  const data = await tmdbFetch<{ results: TMDBMovieResult[] }>("discover/movie", query);
+  const mapped = data.results.map(mapMovie);
+  await cacheMovies(mapped);
+  return mapped;
 }
 
 /**
@@ -421,7 +618,10 @@ export async function handleMovie(request: Request) {
   }
 
   try {
-    const payload = await tmdbFetch<TMDBMovieResult>(`movie/${tmdbId}`);
+    const payload = await tmdbFetch<TMDBMovieResult>(`movie/${tmdbId}`, {
+      append_to_response: "credits",
+      language: "en-US",
+    });
     let mapped = mapMovie(payload);
 
     const fallbackPosterUrl = await findBestPosterImage(tmdbId, payload.poster_path ?? null);

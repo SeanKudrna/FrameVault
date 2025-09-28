@@ -56,9 +56,43 @@ export default async function CollectionEditorPage({ params }: PageParams) {
 
   if (collectionResponse.error) throw collectionResponse.error;
   const collection = collectionResponse.data;
-  if (!collection || collection.owner_id !== user.id) {
+  if (!collection) {
     notFound();
   }
+
+  const isOwner = collection.owner_id === user.id;
+  let isCollaborator = false;
+
+  if (!isOwner) {
+    const collaboratorResponse = await supabase
+      .from("collection_collaborators")
+      .select("role")
+      .eq("collection_id", collectionId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (collaboratorResponse.error) throw collaboratorResponse.error;
+    if (!collaboratorResponse.data) {
+      notFound();
+    }
+    isCollaborator = true;
+  }
+
+  const collaboratorsResponse = await supabase
+    .from("collection_collaborators")
+    .select("user_id, role, profiles:profiles!collection_collaborators_user_id_fkey(username, display_name, avatar_url)")
+    .eq("collection_id", collectionId)
+    .order("created_at", { ascending: true });
+
+  if (collaboratorsResponse.error) throw collaboratorsResponse.error;
+
+  const collaborators = (collaboratorsResponse.data ?? []).map((row) => ({
+    user_id: row.user_id,
+    role: row.role,
+    username: row.profiles?.username ?? "",
+    display_name: row.profiles?.display_name ?? null,
+    avatar_url: row.profiles?.avatar_url ?? null,
+  }));
 
   const items = collection.collection_items ?? [];
   const tmdbIds = items.map((item) => item.tmdb_id);
@@ -153,6 +187,10 @@ export default async function CollectionEditorPage({ params }: PageParams) {
       }}
       profile={profileResponse.data as Profile}
       items={mappedItems}
+      collaborators={collaborators}
+      isOwner={isOwner}
+      canManageCollaborators={isOwner}
+      viewerIsCollaborator={isCollaborator}
     />
   );
 }
