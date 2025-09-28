@@ -24,6 +24,36 @@ const PROVIDERS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
  */
 const env = getServerEnv();
 
+const TMDB_GENRE_LOOKUP: Record<number, string> = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Science Fiction",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+};
+
+export function resolveGenreName(id: number, provided?: string | null) {
+  const cleaned = (provided ?? "").trim();
+  if (cleaned.length > 0 && cleaned.toLowerCase() !== "unknown") {
+    return cleaned;
+  }
+  return TMDB_GENRE_LOOKUP[id] ?? "Unknown";
+}
+
 /**
  * Lightweight representation of a TMDB movie that is safe to return to clients or store locally.
  */
@@ -151,7 +181,7 @@ function mapMovie(payload: TMDBMovieResult): MovieSummary {
     releaseYear: Number.isNaN(releaseYear) ? null : releaseYear,
     genres:
       payload.genres ??
-      (payload.genre_ids?.map((id) => ({ id, name: "" })) ?? []),
+      (payload.genre_ids?.map((id) => ({ id, name: resolveGenreName(id) })) ?? []),
     runtime: payload.runtime ?? null,
     voteAverage: payload.vote_average ?? null,
   };
@@ -166,6 +196,12 @@ function mapCachedMovie(row: Movie): MovieSummary {
     const fallback = (row.tmdb_json as Record<string, unknown>)["fallbackPosterUrl"];
     fallbackPosterUrl = typeof fallback === "string" ? fallback : null;
   }
+  const cachedGenres = Array.isArray(row.genres)
+    ? (row.genres as { id: number; name?: string | null }[]).map((genre) => ({
+        id: genre.id,
+        name: resolveGenreName(genre.id, genre.name ?? null),
+      }))
+    : [];
   return {
     tmdbId: row.tmdb_id,
     title: row.title ?? "Untitled",
@@ -174,9 +210,7 @@ function mapCachedMovie(row: Movie): MovieSummary {
     fallbackPosterUrl,
     backdropUrl: row.backdrop_url,
     releaseYear: row.release_year ?? null,
-    genres: Array.isArray(row.genres)
-      ? (row.genres as { id: number; name: string }[])
-      : [],
+    genres: cachedGenres,
     runtime: row.runtime ?? null,
     voteAverage:
       row.tmdb_json && typeof row.tmdb_json === "object" && "vote_average" in row.tmdb_json
@@ -344,7 +378,10 @@ async function cacheMovies(movies: MovieSummary[], tmdbPayloads?: Record<number,
     release_year: movie.releaseYear,
     poster_url: movie.posterUrl,
     backdrop_url: movie.backdropUrl,
-    genres: movie.genres,
+    genres: movie.genres.map((genre) => ({
+      id: genre.id,
+      name: resolveGenreName(genre.id, genre.name),
+    })),
     runtime: movie.runtime,
     tmdb_json:
       tmdbPayloads?.[movie.tmdbId] ?? {

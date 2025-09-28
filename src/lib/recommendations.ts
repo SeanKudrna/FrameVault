@@ -7,7 +7,7 @@
 
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service";
 import type { MovieSummary } from "@/lib/tmdb";
-import { discoverMovies } from "@/lib/tmdb";
+import { discoverMovies, resolveGenreName } from "@/lib/tmdb";
 
 interface GenreMetric {
   id: number;
@@ -35,23 +35,28 @@ interface SmartPickOptions {
   excludeTmdbIds?: number[];
 }
 
-function incrementGenre(metric: Map<number, GenreMetric>, genre: { id: number; name: string }) {
+function incrementGenre(metric: Map<number, GenreMetric>, genre: { id: number; name?: string | null }) {
   const existing = metric.get(genre.id);
   if (existing) {
     existing.count += 1;
     return;
   }
-  metric.set(genre.id, { id: genre.id, name: genre.name || "Unknown", count: 1 });
+  metric.set(genre.id, {
+    id: genre.id,
+    name: resolveGenreName(genre.id, genre.name ?? null),
+    count: 1,
+  });
 }
 
 function createRationale(overlap: { id: number; name: string }[], fallbackGenres: GenreMetric[]) {
   if (overlap.length) {
     return overlap
       .slice(0, 2)
-      .map((genre) => `Because you love ${genre.name}`);
+      .map((genre) => `Because you love ${resolveGenreName(genre.id, genre.name)}`);
   }
   if (fallbackGenres.length) {
-    return [`Because you’re into ${fallbackGenres[0].name}`];
+    const primary = fallbackGenres[0];
+    return [`Because you’re into ${resolveGenreName(primary.id, primary.name)}`];
   }
   return ["Trending with the FrameVault community"];
 }
@@ -121,7 +126,9 @@ export async function getSmartPicksForUser(userId: string, options: SmartPickOpt
     if (moviesError) throw moviesError;
 
     for (const movie of movies ?? []) {
-      const genres = Array.isArray(movie.genres) ? (movie.genres as { id: number; name: string }[]) : [];
+      const genres = Array.isArray(movie.genres)
+        ? (movie.genres as { id: number; name?: string | null }[])
+        : [];
       for (const genre of genres) {
         if (typeof genre?.id === "number") {
           incrementGenre(genreMetrics, genre);
@@ -153,7 +160,12 @@ export async function getSmartPicksForUser(userId: string, options: SmartPickOpt
       if (excluded.has(movie.tmdbId) || fetchedIds.has(movie.tmdbId)) continue;
       fetchedIds.add(movie.tmdbId);
 
-      const overlappingGenres = movie.genres.filter((genre) => focusGenreSet.has(genre.id));
+      const overlappingGenres = movie.genres
+        .filter((genre) => focusGenreSet.has(genre.id))
+        .map((genre) => ({
+          id: genre.id,
+          name: resolveGenreName(genre.id, genre.name),
+        }));
       picks.push({
         movie,
         rationale: createRationale(overlappingGenres, rankedGenres),

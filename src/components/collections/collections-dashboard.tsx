@@ -66,7 +66,7 @@ function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] 
           <div className="hidden h-10 w-10 md:block" aria-hidden="true" />
         )}
 
-        <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <AnimatePresence mode="wait">
             {visibleItems.map((pick) => (
               <motion.div
@@ -75,7 +75,7 @@ function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] 
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ duration: 0.25 }}
-                className="h-full"
+                className="h-full py-1"
               >
                 <SmartPickCard pick={pick} />
               </motion.div>
@@ -100,7 +100,7 @@ function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] 
       </div>
 
       {showNavigation ? (
-        <div className="flex justify-center gap-2">
+        <div className="flex justify-center gap-2 pb-3">
           {Array.from({ length: totalPages }).map((_, index) => (
             <button
               key={index}
@@ -230,7 +230,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
           animate={{ opacity: 1, y: 0 }}
           className={cn(
             "relative overflow-hidden rounded-3xl",
-            smartPicksOpen ? "glass-card p-8" : "glass p-6"
+            smartPicksOpen ? "glass-card px-8 py-10" : "glass p-6"
           )}
         >
           {/* Background Effects */}
@@ -541,7 +541,7 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
   const rationale = pick.rationale.slice(0, 3);
 
   return (
-    <article className="group flex h-full max-w-[320px] flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)]">
+    <article className="group flex h-full w-full flex-col gap-4 rounded-3xl border border-border-primary/60 bg-surface-primary/80 p-4 shadow-lg shadow-black/10 transition hover:-translate-y-1 hover:border-accent-primary/50 hover:shadow-[0_30px_60px_-35px_rgba(129,140,248,0.55)]">
       <div className="flex gap-4">
         <div className="relative h-28 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-border-secondary/60 bg-surface-secondary">
           <PosterImage
@@ -572,7 +572,7 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
           </div>
 
           {rationale.length ? (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-y-1.5 gap-x-3">
               {rationale.map((reason, index) => (
                 <span
                   key={`${pick.movie.tmdbId}-reason-${index}`}
