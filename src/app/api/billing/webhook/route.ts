@@ -313,7 +313,11 @@ async function upsertSubscription(
   const hasPendingSignals = Boolean(subscription.pending_update) || pendingUpdateItems.length > 0;
   const hasDerivedPendingPlan = Boolean(pendingPlanCandidateFromStripe) || Boolean(pendingPlanFromPrice);
   const hasCancellationDowngrade = Boolean(subscription.cancel_at_period_end);
-  const pendingUpdateSignalsFree = Boolean(subscription.cancel_at_period_end);
+
+  if (hasCancellationDowngrade) {
+    pendingPlanCandidate = "free";
+    existingRowPendingPlan = null;
+  }
 
   const hasStripePendingInsight =
     hasPendingSignals || hasDerivedPendingPlan || hasPendingFree || hasCancellationDowngrade;
@@ -341,10 +345,6 @@ async function upsertSubscription(
         : null;
 
   if (treatFreePlanAsCancellation) {
-    scheduledDowngrade = "free";
-  }
-
-  if (!scheduledDowngrade && pendingUpdateSignalsFree) {
     scheduledDowngrade = "free";
   }
 
