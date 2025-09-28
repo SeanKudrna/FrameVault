@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import {
   STRIPE_PRICE_IDS,
   isActiveStripeStatus,
+  resolvePendingSubscriptionPlan,
   resolveProfilePlan,
   resolveSubscriptionPlanCandidate,
 } from "@/lib/billing";
@@ -14,8 +15,31 @@ function createSubscriptionItem(options: {
   quantity?: number;
   priceMetadata?: Stripe.Metadata;
   itemMetadata?: Stripe.Metadata;
+  priceProductMetadata?: Stripe.Metadata;
 }): Stripe.SubscriptionItem {
-  const { id, priceId, created, quantity = 1, priceMetadata, itemMetadata } = options;
+  const { id, priceId, created, quantity = 1, priceMetadata, itemMetadata, priceProductMetadata } = options;
+  const product = priceProductMetadata
+    ? ({
+        id: `prod_${id}`,
+        object: "product",
+        active: true,
+        attributes: [],
+        created,
+        default_price: null,
+        description: null,
+        images: [],
+        livemode: false,
+        metadata: priceProductMetadata,
+        name: "Test Product",
+        package_dimensions: null,
+        shippable: null,
+        statement_descriptor: null,
+        type: "service",
+        unit_label: null,
+        updated: created,
+        url: null,
+      } satisfies Stripe.Product)
+    : "prod_123";
   return {
     id,
     object: "subscription_item",
@@ -55,7 +79,7 @@ function createSubscriptionItem(options: {
       lookup_key: null,
       metadata: priceMetadata ?? {},
       nickname: null,
-      product: "prod_123",
+      product,
       recurring: {
         aggregate_usage: null,
         interval: "month",
@@ -231,6 +255,93 @@ describe("resolveSubscriptionPlanCandidate", () => {
 
     const resolution = resolveSubscriptionPlanCandidate(subscription);
     expect(resolution.plan).toBe("pro");
+  });
+
+  it("reads product metadata when price metadata is missing", () => {
+    const item = createSubscriptionItem({
+      id: "si_product_meta",
+      priceId: "price_unknown",
+      created: 4_000,
+      priceProductMetadata: { plan: "plus" },
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [item],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+    });
+
+    const resolution = resolveSubscriptionPlanCandidate(subscription);
+    expect(resolution.plan).toBe("plus");
+    expect(resolution.source).toBe("price");
+  });
+});
+
+describe("resolvePendingSubscriptionPlan", () => {
+  it("reads the target plan from pending update items", () => {
+    const currentItem = createSubscriptionItem({
+      id: "si_current",
+      priceId: STRIPE_PRICE_IDS.pro,
+      created: 2_000,
+    });
+    const pendingItem = createSubscriptionItem({
+      id: "si_pending",
+      priceId: STRIPE_PRICE_IDS.plus,
+      created: 3_000,
+    });
+
+    const subscription = createSubscription({
+      items: {
+        object: "list",
+        data: [currentItem],
+        has_more: false,
+        url: "/v1/subscriptions/sub_123/items",
+      },
+      pending_update: {
+        billing_cycle_anchor: null,
+        expires_at: null,
+        subscription_items: {
+          object: "list",
+          data: [pendingItem],
+          has_more: false,
+          url: "/v1/subscriptions/sub_123/items",
+        },
+        trial_end: null,
+        trial_from_plan: false,
+        trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+        metadata: {},
+        invoice_settings: { issuer: null },
+        schedule: null,
+      } as Stripe.SubscriptionPendingUpdate,
+    });
+
+    expect(resolvePendingSubscriptionPlan(subscription)).toBe("plus");
+  });
+
+  it("falls back to metadata when pending items are missing", () => {
+    const subscription = createSubscription({
+      pending_update: {
+        billing_cycle_anchor: null,
+        expires_at: null,
+        subscription_items: {
+          object: "list",
+          data: [],
+          has_more: false,
+          url: "/v1/subscriptions/sub_123/items",
+        },
+        trial_end: null,
+        trial_from_plan: false,
+        trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+        metadata: { plan: "pro" },
+        invoice_settings: { issuer: null },
+        schedule: null,
+      } as Stripe.SubscriptionPendingUpdate,
+    });
+
+    expect(resolvePendingSubscriptionPlan(subscription)).toBe("pro");
   });
 });
 

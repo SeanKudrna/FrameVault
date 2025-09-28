@@ -23,7 +23,7 @@ const PLAN_RANK: Record<Plan, number> = {
   pro: 2,
 };
 
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+export const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
   "active",
   "trialing",
   "past_due",
@@ -31,7 +31,7 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
   "incomplete",
 ]);
 
-const TERMINAL_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+export const TERMINAL_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
   "canceled",
   "incomplete_expired",
 ]);
@@ -63,10 +63,45 @@ function readPlanFromPrice(price: Stripe.Price | null | undefined): PaidPlan | n
   return readMetadataPlan(price.metadata);
 }
 
+function readPlanFromProduct(
+  product: Stripe.Product | Stripe.DeletedProduct | string | null | undefined
+): PaidPlan | null {
+  if (!product || typeof product !== "object") return null;
+  if ("deleted" in product && product.deleted) return null;
+  if ("metadata" in product && product.metadata) {
+    return readMetadataPlan(product.metadata);
+  }
+  return null;
+}
+
 function isDeletedSubscriptionItem(
   item: Stripe.SubscriptionItem | Stripe.DeletedSubscriptionItem
 ): item is Stripe.DeletedSubscriptionItem {
   return "deleted" in item && Boolean(item.deleted);
+}
+
+function isApiList<T>(value: unknown): value is Stripe.ApiList<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "data" in value &&
+    Array.isArray((value as { data?: unknown }).data)
+  );
+}
+
+export function normaliseSubscriptionItems(
+  items:
+    | Array<Stripe.SubscriptionItem | Stripe.DeletedSubscriptionItem>
+    | Stripe.ApiList<Stripe.SubscriptionItem | Stripe.DeletedSubscriptionItem>
+    | null
+    | undefined
+): Array<Stripe.SubscriptionItem | Stripe.DeletedSubscriptionItem> {
+  if (!items) return [];
+  if (Array.isArray(items)) return items;
+  if (isApiList<Stripe.SubscriptionItem | Stripe.DeletedSubscriptionItem>(items)) {
+    return items.data;
+  }
+  return [];
 }
 
 function resolvePlanFromSubscriptionItems(items: Stripe.SubscriptionItem[] | undefined): PaidPlan | null {
@@ -79,7 +114,7 @@ function resolvePlanFromSubscriptionItems(items: Stripe.SubscriptionItem[] | und
   for (const item of sorted) {
     if (isDeletedSubscriptionItem(item)) continue;
     if (typeof item.quantity === "number" && item.quantity === 0) continue;
-    const plan = readPlanFromPrice(item.price);
+    const plan = readPlanFromPrice(item.price) ?? readPlanFromProduct(item.price?.product);
     if (plan) return plan;
   }
 
@@ -89,6 +124,7 @@ function resolvePlanFromSubscriptionItems(items: Stripe.SubscriptionItem[] | und
     const plan =
       readMetadataPlan(item.metadata) ??
       readMetadataPlan(item.price?.metadata) ??
+      readPlanFromProduct(item.price?.product) ??
       (item.plan && "metadata" in item.plan ? readMetadataPlan(item.plan.metadata) : null);
     if (plan) return plan;
   }
@@ -169,6 +205,38 @@ export interface SubscriptionPlanResolution {
 }
 
 /**
+ * Attempts to determine the plan scheduled to take effect after the current
+ * billing period. Relies on Stripe's pending update metadata when present.
+ */
+export function resolvePendingSubscriptionPlan(subscription: Stripe.Subscription): PaidPlan | null {
+  const pendingItemsRaw = normaliseSubscriptionItems(subscription.pending_update?.subscription_items);
+  const pendingItems = pendingItemsRaw.filter(
+    (item): item is Stripe.SubscriptionItem => !isDeletedSubscriptionItem(item)
+  );
+
+  if (pendingItems.length > 0) {
+    const pendingFromItems = resolvePlanFromSubscriptionItems(pendingItems);
+    if (pendingFromItems) {
+      return pendingFromItems;
+    }
+  }
+
+  const metadataPlan =
+    readMetadataPlan(subscription.pending_update?.metadata) ??
+    readMetadataPlan(pendingItems[0]?.metadata ?? null) ??
+    (subscription.pending_update?.schedule &&
+    typeof subscription.pending_update.schedule === "object" &&
+    subscription.pending_update.schedule !== null &&
+    "metadata" in subscription.pending_update.schedule
+      ? readMetadataPlan(
+          (subscription.pending_update.schedule as Stripe.SubscriptionSchedule).metadata ?? null
+        )
+      : null);
+
+  return metadataPlan;
+}
+
+/**
  * Attempts to determine the target FrameVault plan for a Stripe subscription.
  * Prefers the newest non-deleted subscription item price before falling back to
  * metadata hints.
@@ -183,7 +251,9 @@ export function resolveSubscriptionPlanCandidate(
   }
 
   const pendingItemPlan = resolvePlanFromSubscriptionItems(
-    subscription.pending_update?.subscription_items?.data ?? []
+    normaliseSubscriptionItems(subscription.pending_update?.subscription_items).filter(
+      (item): item is Stripe.SubscriptionItem => !isDeletedSubscriptionItem(item)
+    )
   );
   if (pendingItemPlan) {
     return { plan: pendingItemPlan, source: "price" };
