@@ -6,10 +6,10 @@
  * and dialogs.
  */
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2, Film, Calendar, Lock, Globe, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2, Film, Calendar, Lock, Globe, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -156,19 +156,41 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
   const [formDescription, setFormDescription] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(() => {
+  const [smartPicks, setSmartPicks] = useState<SmartPick[]>(() => recommendations ?? []);
+  const [smartProfile, setSmartProfile] = useState<TasteProfile | null>(() => tasteProfile ?? null);
+  const [refreshingSmartPicks, setRefreshingSmartPicks] = useState(false);
+  const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(true);
+  const smartPickSummary = useMemo(() => {
+    if (!smartPicks.length) return null;
+    const titles = smartPicks
+      .map((pick) => pick.movie.title)
+      .filter((title): title is string => Boolean(title && title.trim().length));
+    if (titles.length === 0) {
+      return "Fresh picks ready when you are.";
+    }
+    if (titles.length === 1) {
+      const remaining = smartPicks.length - 1;
+      return remaining > 0
+        ? `${titles[0]} and ${remaining} more picked just for you`
+        : `${titles[0]} — picked just for you`;
+    }
+    const [first, second] = titles;
+    const remaining = smartPicks.length - 2;
+    return remaining > 0
+      ? `${first}, ${second}, and ${remaining} more picked just for you`
+      : `${first} and ${second} — picked just for you`;
+  }, [smartPicks]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
-      return true;
+      return;
     }
 
     const storedValue = window.localStorage.getItem(SMART_PICKS_STATE_KEY);
-
-    if (storedValue === null) {
-      return true;
+    if (storedValue !== null) {
+      setSmartPicksOpen(storedValue === "true");
     }
-
-    return storedValue === "true";
-  });
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -177,6 +199,48 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
 
     window.localStorage.setItem(SMART_PICKS_STATE_KEY, smartPicksOpen ? "true" : "false");
   }, [smartPicksOpen]);
+
+  useEffect(() => {
+    setSmartPicks(recommendations ?? []);
+  }, [recommendations]);
+
+  useEffect(() => {
+    setSmartProfile(tasteProfile ?? null);
+  }, [tasteProfile]);
+
+  async function refreshSmartPicks() {
+    if (refreshingSmartPicks) return;
+    try {
+      setRefreshingSmartPicks(true);
+      const excludeParam = smartPicks.length
+        ? `&exclude=${smartPicks.map((pick) => pick.movie.tmdbId).join(",")}`
+        : "";
+      const limitParam = smartPicks.length ? smartPicks.length : 6;
+      const response = await fetch(`/api/recommendations?limit=${limitParam}${excludeParam}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const message = await response
+          .json()
+          .then((data) => (typeof data?.message === "string" ? data.message : null))
+          .catch(() => null);
+        throw new Error(message ?? "Unable to refresh Smart Picks right now");
+      }
+
+      const result = (await response.json()) as { picks?: SmartPick[]; profile?: TasteProfile | null };
+      setSmartPicks(result.picks ?? []);
+      setSmartProfile(result.profile ?? null);
+      setSmartPicksOpen(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to refresh Smart Picks";
+      toast({ title: "Refresh failed", description: message, variant: "error" });
+    } finally {
+      setRefreshingSmartPicks(false);
+    }
+  }
 
   const limit = PLAN_COLLECTION_LIMIT[profile.plan] ?? Infinity;
   // Plan gating logic ensures the UI matches server enforcement before the
@@ -230,7 +294,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
           animate={{ opacity: 1, y: 0 }}
           className={cn(
             "relative overflow-hidden rounded-3xl",
-            smartPicksOpen ? "glass-card px-8 py-10" : "glass p-6"
+            smartPicksOpen ? "glass-card px-8 pt-6 pb-10" : "glass px-8 pt-6 pb-3"
           )}
         >
           {/* Background Effects */}
@@ -248,8 +312,8 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                   </div>
                 </div>
                 <p className="text-text-secondary">
-                  {tasteProfile?.topGenres?.length
-                    ? `Inspired by your love of ${tasteProfile.topGenres
+                  {smartProfile?.topGenres?.length
+                    ? `Inspired by your love of ${smartProfile.topGenres
                         .slice(0, 2)
                         .map((genre) => genre.name)
                         .join(" & ")}`
@@ -257,21 +321,43 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                 </p>
               </div>
 
-              <Button
-                variant="glass"
-                size="sm"
-                onClick={() => setSmartPicksOpen((prev) => !prev)}
-                className="group self-start md:self-auto"
-                aria-expanded={smartPicksOpen}
-                aria-controls="smart-picks-panel"
-              >
-                <ChevronDown
-                  size={16}
-                  className={`transition-transform duration-300 ${smartPicksOpen ? "rotate-180" : "rotate-0"}`}
-                />
-                {smartPicksOpen ? "Hide Picks" : "Show Picks"}
-              </Button>
+              <div className="flex items-center gap-2 self-start md:self-auto">
+                <Button
+                  variant="glass"
+                  size="sm"
+                  onClick={refreshSmartPicks}
+                  disabled={refreshingSmartPicks}
+                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)]"
+                >
+                  <RotateCcw
+                    size={16}
+                    className={cn(
+                      "transition-transform",
+                      refreshingSmartPicks ? "animate-spin" : "group-hover:-rotate-90"
+                    )}
+                  />
+                  {refreshingSmartPicks ? "Refreshing" : "Refresh"}
+                </Button>
+                <Button
+                  variant="glass"
+                  size="sm"
+                  onClick={() => setSmartPicksOpen((prev) => !prev)}
+                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)]"
+                  aria-expanded={smartPicksOpen}
+                  aria-controls="smart-picks-panel"
+                >
+                  <ChevronDown
+                    size={16}
+                    className={`transition-transform duration-300 ${smartPicksOpen ? "rotate-180" : "rotate-0"}`}
+                  />
+                  {smartPicksOpen ? "Hide Picks" : "Show Picks"}
+                </Button>
+              </div>
             </div>
+
+            {!smartPicksOpen && smartPickSummary ? (
+              <p className="mb-4 text-xs text-text-tertiary">{smartPickSummary}</p>
+            ) : null}
 
             <AnimatePresence mode="wait">
               {smartPicksOpen && (
@@ -283,23 +369,23 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                   transition={{ duration: 0.3 }}
                   className="overflow-hidden"
                 >
-                  {recommendations && recommendations.length > 0 ? (
-                    <SmartPicksCarousel recommendations={recommendations} />
-                  ) : (
-                    <div className="glass p-8 text-center rounded-2xl">
-                      <div className="space-y-4">
-                        <div className="w-16 h-16 mx-auto bg-surface-secondary rounded-full flex items-center justify-center">
-                          <Sparkles className="w-8 h-8 text-text-muted" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-text-primary mb-2">Build Your Taste Profile</h3>
-                          <p className="text-text-tertiary">
-                            Add ratings and build collections to unlock personalized recommendations tailored just for you.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+          {smartPicks && smartPicks.length > 0 ? (
+              <SmartPicksCarousel recommendations={smartPicks} />
+          ) : (
+            <div className="glass p-8 text-center rounded-2xl">
+              <div className="space-y-4">
+                <div className="w-16 h-16 mx-auto bg-surface-secondary rounded-full flex items-center justify-center">
+                  <Sparkles className="w-8 h-8 text-text-muted" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-text-primary mb-2">Build Your Taste Profile</h3>
+                  <p className="text-text-tertiary">
+                    Add ratings and build collections to unlock personalized recommendations tailored just for you.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -312,7 +398,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between"
+        className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between px-2 md:px-4"
       >
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -345,7 +431,11 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
         <div>
           <Dialog.Root open={isDialogOpen} onOpenChange={setDialogOpen}>
           <Dialog.Trigger asChild>
-            <Button size="lg" disabled={!canCreate} className="group shadow-lg">
+            <Button
+              size="lg"
+              disabled={!canCreate}
+              className="group shadow-lg hover:!text-[#0a0a0f]"
+            >
               <Plus size={18} className="group-hover:rotate-90 transition-transform" />
               New Collection
             </Button>

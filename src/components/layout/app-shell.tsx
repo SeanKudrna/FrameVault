@@ -70,10 +70,10 @@ export function AppShell({ children, profile }: AppShellProps) {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed left-0 top-0 z-50 h-full w-80 transform transition-all duration-300 ease-out md:translate-x-0",
+        "fixed left-0 top-0 bottom-[78px] z-50 w-80 transform transition-all duration-300 ease-out md:translate-x-0",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="h-full glass-card m-4 rounded-3xl border border-border-primary p-6 shadow-2xl">
+        <div className="flex h-full flex-col glass-card m-4 rounded-3xl border border-border-primary p-6 shadow-2xl">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <Link href="/app" className="flex items-center gap-3 group">
