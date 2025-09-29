@@ -8,7 +8,13 @@ import type { OnboardingState, Profile } from "@/lib/supabase/types";
 export default async function OnboardingPage() {
   const supabase = await getSupabaseServerClient();
   const [{ data: userData, error: userError }] = await Promise.all([
-    supabase.auth.getUser(),
+    supabase.auth.getUser().catch((error) => {
+      // Handle auth session missing errors gracefully
+      if (error?.message?.includes('Auth session missing')) {
+        return { data: { user: null }, error: null };
+      }
+      throw error;
+    }),
   ]);
 
   if (userError) {

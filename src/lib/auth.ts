@@ -25,8 +25,20 @@ import type { Profile } from "@/lib/supabase/types";
 export async function getSession() {
   const supabase = await getSupabaseServerClient();
   const [sessionResult, userResult] = await Promise.all([
-    supabase.auth.getSession(),
-    supabase.auth.getUser(),
+    supabase.auth.getSession().catch((error) => {
+      // Handle auth session missing errors gracefully
+      if (error?.message?.includes('Auth session missing')) {
+        return { data: { session: null }, error: null };
+      }
+      throw error;
+    }),
+    supabase.auth.getUser().catch((error) => {
+      // Handle auth session missing errors gracefully
+      if (error?.message?.includes('Auth session missing')) {
+        return { data: { user: null }, error: null };
+      }
+      throw error;
+    }),
   ]);
 
   if (sessionResult.error) throw sessionResult.error;
@@ -53,7 +65,13 @@ export async function getSession() {
  */
 export async function getAuthenticatedProfile() {
   const supabase = await getSupabaseServerClient();
-  const { data: userData, error } = await supabase.auth.getUser();
+  const { data: userData, error } = await supabase.auth.getUser().catch((error) => {
+    // Handle auth session missing errors gracefully
+    if (error?.message?.includes('Auth session missing')) {
+      return { data: { user: null }, error: null };
+    }
+    throw error;
+  });
   if (error) throw error;
   if (!userData?.user) return null;
 
@@ -79,7 +97,13 @@ export async function getAuthenticatedProfile() {
  */
 export async function requireUserProfile() {
   const supabase = await getSupabaseServerClient();
-  const { data: userData, error } = await supabase.auth.getUser();
+  const { data: userData, error } = await supabase.auth.getUser().catch((error) => {
+    // Handle auth session missing errors gracefully
+    if (error?.message?.includes('Auth session missing')) {
+      return { data: { user: null }, error: null };
+    }
+    throw error;
+  });
   if (error) throw error;
   if (!userData?.user) {
     throw new Error("Not authenticated");

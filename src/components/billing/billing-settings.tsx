@@ -237,7 +237,7 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
   }, [checkoutStatus, toast]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-20">
       <section className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-8 shadow-[0_20px_70px_-60px_rgba(15,23,42,0.9)]">
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -256,7 +256,7 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
                 onClick={handlePortal}
                 disabled={loadingPlan !== null}
                 variant="muted"
-                className="min-w-[160px] hover:bg-white/10 hover:text-white/90"
+                className="min-w-[160px] hover:bg-white/10 hover:text-accent-primary cursor-pointer"
               >
                 <CreditCard size={18} />
                 Manage billing
@@ -330,7 +330,7 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
                           variant="muted"
                           onClick={handlePortal}
                           disabled={loadingPlan !== null}
-                          className="w-full hover:bg-white/10 hover:text-white/90"
+                          className="w-full hover:bg-white/10 hover:text-accent-primary cursor-pointer"
                         >
                           Manage in Stripe
                           <ArrowRight size={18} className="opacity-80" />
@@ -399,19 +399,19 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
         <section className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 text-sm text-slate-300">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-slate-100">Data export</p>
-              <p className="text-xs text-slate-500">Download CSV or JSON snapshots of every collection and item.</p>
+              <p className="text-xl font-semibold text-slate-100">Data export</p>
+              <p className="text-sm text-slate-300">Download CSV or JSON snapshots of every collection and item.</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button asChild variant="muted">
+              <Button asChild variant="muted" className="hover:bg-white/10 hover:text-white/90">
                 <a href="/api/export.csv">Download CSV</a>
               </Button>
-              <Button asChild variant="muted">
+              <Button asChild variant="muted" className="hover:bg-white/10 hover:text-white/90">
                 <a href="/api/export.json">Download JSON</a>
               </Button>
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500">Exports are limited to one request per minute.</p>
+          <p className="mt-3 text-xs text-slate-500">Exports are limited to one request per minute.</p>
         </section>
       ) : null}
 
@@ -422,10 +422,10 @@ export function BillingSettings({ profile, subscription, checkoutStatus }: Billi
             <p className="text-xs text-slate-500">The Stripe customer portal keeps everything in one place.</p>
           </div>
           <Button
-            variant="ghost"
+            variant="outline"
             onClick={handlePortal}
             disabled={loadingPlan !== null}
-            className="border border-slate-700/60"
+            className="hover:bg-white/10 hover:text-accent-primary cursor-pointer"
           >
             Open portal
           </Button>

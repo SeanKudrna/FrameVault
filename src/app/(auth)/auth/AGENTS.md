@@ -5,6 +5,7 @@ Contains the primary authentication route implementation that powers `/auth/sign
 
 ## Key Files
 - `sign-in/page.tsx` loads the Supabase server client, redirects authenticated users to `/app`, and renders the `SignInForm` UI within a branded background.
+- `sign-out/page.tsx` ensures clean session termination and redirects to home after sign out.
 - `verify-email/page.tsx` presents the post-registration instructions telling new users to confirm their Supabase email before returning to sign in.
 
 ## Update Protocol

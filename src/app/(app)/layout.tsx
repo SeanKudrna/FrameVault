@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     supabase.auth.getUser(),
   ]);
 
-  if (userError) {
+  if (userError && !isAuthSessionMissingError(userError)) {
     console.error("Supabase auth error", userError);
   }
 
@@ -45,4 +45,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const profile = data ? (data as Profile) : await ensureProfile(user.id, user.email ?? null);
 
   return <AppShell profile={profile}>{children}</AppShell>;
+}
+
+function isAuthSessionMissingError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const message = "message" in error ? String((error as { message?: string }).message ?? "") : "";
+  return message.includes("Auth session missing");
 }

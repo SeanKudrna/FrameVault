@@ -10,7 +10,13 @@ import type { Profile } from "@/lib/supabase/types";
 
 export default async function ProfileSettingsPage() {
   const supabase = await getSupabaseServerClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const { data: userData, error: userError } = await supabase.auth.getUser().catch((error) => {
+    // Handle auth session missing errors gracefully
+    if (error?.message?.includes('Auth session missing')) {
+      return { data: { user: null }, error: null };
+    }
+    throw error;
+  });
 
   if (userError) throw userError;
 

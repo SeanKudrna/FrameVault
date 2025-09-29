@@ -62,7 +62,17 @@ export function SignInForm() {
         }
       }
 
-      // The SupabaseProvider will handle navigation automatically when the session is established
+      setLoading(false);
+
+      // Simple redirect - let the server handle session establishment
+      if (typeof window !== "undefined") {
+        const currentPath = window.location.pathname;
+        if (currentPath.startsWith("/auth/") || currentPath === "/") {
+          router.replace("/app");
+        } else {
+          router.refresh();
+        }
+      }
     } catch (err) {
       setError(formatError(err));
       setLoading(false);

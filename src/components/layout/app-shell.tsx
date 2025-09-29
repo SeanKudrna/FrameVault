@@ -145,43 +145,44 @@ export function AppShell({ children, profile }: AppShellProps) {
 
           {/* User Profile Card */}
           <div className="mt-auto">
-            <div className="glass p-4 rounded-2xl">
-              <div className="flex items-center gap-3 mb-3">
-                <div className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center bg-gradient-to-r",
-                  getPlanGradient(profile.plan)
-                )}>
-                  {getPlanIcon(profile.plan)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-text-primary truncate">
-                    {profile.display_name ?? profile.username}
-                  </p>
-                  <p className="text-sm text-text-tertiary">@{profile.username}</p>
+            <Link href="/settings/profile" className="block group">
+              <div className="glass-card p-4 rounded-2xl border border-border-primary/60 hover:border-accent-primary/40 transition-all duration-200 hover:scale-[1.01] cursor-pointer">
+                {/* Avatar and User Info */}
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-r shadow-md flex-shrink-0",
+                    getPlanGradient(profile.plan)
+                  )}>
+                    {getPlanIcon(profile.plan)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-text-primary text-sm leading-tight">
+                      {profile.display_name ?? profile.username}
+                    </p>
+                    <p className="text-xs text-text-tertiary leading-tight">@{profile.username}</p>
+                  </div>
+                  <div className="flex items-center">
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r shadow-sm text-white",
+                      getPlanGradient(profile.plan)
+                    )}>
+                      {profile.plan.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
               </div>
+            </Link>
 
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-text-tertiary uppercase tracking-wide">Plan</span>
-                <span className={cn(
-                  "px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r",
-                  getPlanGradient(profile.plan),
-                  "text-white"
-                )}>
-                  {profile.plan.toUpperCase()}
-                </span>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full cursor-pointer"
-                onClick={signOut}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign out
-              </Button>
-            </div>
+            {/* Sign Out Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full mt-3 glass-card border-border-primary/60 hover:border-red-400/40 hover:bg-red-500/5 transition-all duration-200 cursor-pointer"
+              onClick={signOut}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign out
+            </Button>
           </div>
         </div>
       </aside>

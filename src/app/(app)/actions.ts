@@ -11,7 +11,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 async function getAuthUser() {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
+  if (error) {
+    // Handle session missing errors gracefully (user may have signed out)
+    if (error.message.includes('Auth session missing')) {
+      throw new ApiError("not_authenticated", "Sign in to continue", 401);
+    }
+    throw error;
+  }
   const user = data?.user;
   if (!user) {
     throw new ApiError("not_authenticated", "Sign in to continue", 401);
@@ -27,6 +33,10 @@ export async function signOutAction() {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signOut({ scope: "global" });
   if (error) {
+    // Ignore auth session missing errors during sign out
+    if (typeof error.message === "string" && error.message.includes("Auth session missing")) {
+      return;
+    }
     throw error;
   }
 }

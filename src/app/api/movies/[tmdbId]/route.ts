@@ -31,7 +31,13 @@ export async function GET(
 
     const supabase = await getSupabaseServerClient();
     const [{ data: userData }] = await Promise.all([
-      supabase.auth.getUser(),
+      supabase.auth.getUser().catch((error) => {
+        // Handle auth session missing errors gracefully
+        if (error?.message?.includes('Auth session missing')) {
+          return { data: { user: null }, error: null };
+        }
+        throw error;
+      }),
     ]);
     const user = userData?.user;
     if (!user) {

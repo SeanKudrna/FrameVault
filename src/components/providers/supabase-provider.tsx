@@ -12,10 +12,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { resetSupabaseBrowserClient } from "@/lib/supabase/client";
 import { signOutAction } from "@/app/(app)/actions";
 import type { Database, Profile } from "@/lib/supabase/types";
 
@@ -38,22 +40,43 @@ const SupabaseContext = createContext<SupabaseContextValue | null>(null);
  * Fetches the current session and verified user concurrently, returning `null` if unauthenticated.
  */
 async function fetchVerifiedSession(client: SupabaseClient<Database>): Promise<Session | null> {
-  const [sessionResult, userResult] = await Promise.all([
-    client.auth.getSession(),
-    client.auth.getUser(),
-  ]);
-
+  const sessionResult = await client.auth.getSession().catch((error) => {
+    // Handle auth session missing errors gracefully
+    if (isAuthSessionMissingError(error)) {
+      return { data: { session: null }, error: null };
+    }
+    throw error;
+  });
   if (sessionResult.error) throw sessionResult.error;
-  if (userResult.error) throw userResult.error;
 
   const session = sessionResult.data.session;
-  const user = userResult.data.user ?? null;
+  if (!session) {
+    return null;
+  }
 
-  if (!session || !user) {
+  const userResult = await client.auth.getUser().catch((error) => {
+    // Handle auth session missing errors gracefully
+    if (isAuthSessionMissingError(error)) {
+      return { data: { user: null }, error: null };
+    }
+    throw error;
+  });
+  if (userResult.error) throw userResult.error;
+
+  const user = userResult.data.user ?? null;
+  if (!user) {
     return null;
   }
 
   return { ...session, user } as Session;
+}
+
+function isAuthSessionMissingError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const message = "message" in error ? String((error as { message?: string }).message ?? "") : "";
+  return message.includes("Auth session missing");
 }
 
 /**
@@ -73,16 +96,12 @@ export function SupabaseProvider({
   const [session, setSession] = useState<Session | null>(initialSession);
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
   const [loading, setLoading] = useState(!initialSession);
+  const hadSessionRef = useRef(!!initialSession);
 
   useEffect(() => {
     let isMounted = true;
 
     async function initialize() {
-      if (initialSession) {
-        setLoading(false);
-        return;
-      }
-
       try {
         const verifiedSession = await fetchVerifiedSession(supabase);
         if (!isMounted) return;
@@ -90,10 +109,15 @@ export function SupabaseProvider({
         if (!verifiedSession) {
           setProfile(null);
         }
-      } catch {
+        hadSessionRef.current = !!verifiedSession;
+      } catch (error) {
         if (!isMounted) return;
         setSession(null);
         setProfile(null);
+        hadSessionRef.current = false;
+        if (error && !isAuthSessionMissingError(error)) {
+          console.error("Supabase auth initialization failed", error);
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -105,31 +129,40 @@ export function SupabaseProvider({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event) => {
+    } = supabase.auth.onAuthStateChange(async (event, sessionFromEvent) => {
       if (!isMounted) return;
+
       try {
-        const verifiedSession = await fetchVerifiedSession(supabase);
+        let verifiedSession = await fetchVerifiedSession(supabase);
+        if (!verifiedSession && sessionFromEvent) {
+          verifiedSession = sessionFromEvent;
+        }
         if (!isMounted) return;
 
-        const wasAuthenticated = !!session;
+        const wasAuthenticated = hadSessionRef.current;
         const isAuthenticated = !!verifiedSession;
 
         setSession(verifiedSession);
         if (!verifiedSession) {
           setProfile(null);
         }
+        hadSessionRef.current = isAuthenticated;
 
         // Navigate to app when user signs in and we're on an auth page
-        if (!wasAuthenticated && isAuthenticated && event === 'SIGNED_IN') {
+        if (!wasAuthenticated && isAuthenticated && event === "SIGNED_IN") {
           const currentPath = window.location.pathname;
-          if (currentPath.startsWith('/auth/') || currentPath === '/') {
-            router.replace('/app');
+          if (currentPath.startsWith("/auth/") || currentPath === "/") {
+            router.replace("/app");
           }
         }
-      } catch {
+      } catch (error) {
         if (!isMounted) return;
         setSession(null);
         setProfile(null);
+        hadSessionRef.current = false;
+        if (error && !isAuthSessionMissingError(error)) {
+          console.error("Supabase auth state sync failed", error);
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -141,7 +174,11 @@ export function SupabaseProvider({
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase, initialSession, session, router]);
+  }, [supabase, initialSession, router]);
+
+  useEffect(() => {
+    hadSessionRef.current = !!session;
+  }, [session]);
 
   useEffect(() => {
     setProfile(initialProfile ?? null);
@@ -180,10 +217,15 @@ export function SupabaseProvider({
       if (!verifiedSession) {
         setProfile(null);
       }
+      hadSessionRef.current = !!verifiedSession;
       return verifiedSession;
     } catch (error) {
       setSession(null);
       setProfile(null);
+      hadSessionRef.current = false;
+      if (isAuthSessionMissingError(error)) {
+        return null;
+      }
       throw error;
     }
   }, [supabase]);
@@ -231,16 +273,44 @@ export function SupabaseProvider({
       console.error("Server sign out failed", error);
     }
 
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error("Client sign out failed", error);
-    }
-
+    // Clear client state immediately
     setSession(null);
     setProfile(null);
-    router.replace("/");
-    router.refresh();
+    hadSessionRef.current = false;
+
+    // Reset the Supabase client cache
+    resetSupabaseBrowserClient();
+
+    // Clear Supabase-related storage only, preserve user preferences
+    if (typeof window !== "undefined") {
+      try {
+        // Clear sessionStorage completely
+        sessionStorage.clear();
+
+        // Clear localStorage selectively - only Supabase-related keys
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase') || key.includes('sb-'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+
+        // Clear Supabase-related cookies only
+        document.cookie.split(";").forEach((cookie) => {
+          const cookieName = cookie.split("=")[0].trim();
+          if (cookieName.includes('supabase') || cookieName.includes('sb-')) {
+            document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          }
+        });
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+
+    // Navigate to a clean sign-out page that will redirect to home
+    window.location.href = "/auth/sign-out";
   }, [router, supabase]);
 
   const value = useMemo(

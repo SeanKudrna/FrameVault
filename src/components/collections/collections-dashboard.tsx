@@ -6,7 +6,7 @@
  * and dialogs.
  */
 
-import { useEffect, useMemo, useState, useTransition, type KeyboardEvent } from "react";
+import React, { useEffect, useMemo, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Ellipsis, Eye, EyeOff, PencilLine, Plus, Sparkles, Trash2, Film, Calendar, Lock, Globe, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
@@ -27,8 +27,9 @@ import { planGateMessage, PLAN_COLLECTION_LIMIT, canCreateCollection } from "@/l
 import type { SmartPick, TasteProfile } from "@/lib/recommendations";
 import { PosterImage } from "@/components/media/poster-image";
 import { cn } from "@/lib/utils";
+import { extractThemeId, getThemeConfig } from "@/lib/themes";
 
-const SMART_PICKS_STATE_KEY = "framevault:smart-picks-open";
+// Note: This key is intentionally not user-specific so the state persists across login/logout
 
 /**
  * Modern carousel component for smart picks with smooth animations.
@@ -133,6 +134,7 @@ export interface CollectionSummary {
   item_count: number;
   created_at: string;
   updated_at: string;
+  theme: Record<string, unknown> | null;
 }
 
 /**
@@ -151,6 +153,12 @@ interface CollectionsDashboardProps {
 export function CollectionsDashboard({ profile, collections, recommendations, tasteProfile }: CollectionsDashboardProps) {
   const router = useRouter();
   const { toast } = useToast();
+
+  console.log('CollectionsDashboard render:', {
+    profileId: profile.id,
+    recommendationsCount: recommendations?.length,
+    timestamp: new Date().toISOString()
+  });
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -159,7 +167,29 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
   const [smartPicks, setSmartPicks] = useState<SmartPick[]>(() => recommendations ?? []);
   const [smartProfile, setSmartProfile] = useState<TasteProfile | null>(() => tasteProfile ?? null);
   const [refreshingSmartPicks, setRefreshingSmartPicks] = useState(false);
-  const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(true);
+  // Initialize state directly from storage to avoid hydration issues
+  const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true; // SSR fallback
+
+    try {
+      const key = `framevault:smart-picks-open:${profile.id}`;
+      const stored = window.localStorage.getItem(key) || window.sessionStorage.getItem(key);
+      const result = stored === null ? true : stored === "true";
+      console.log('Initializing smart picks state:', { key, stored, result, profileId: profile.id, timestamp: new Date().toISOString() });
+      return result;
+    } catch (error) {
+      console.error('Error initializing smart picks state:', error);
+      return true;
+    }
+  });
+
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Debug: Check if component is being remounted
+  React.useEffect(() => {
+    console.log('CollectionsDashboard mounted/remounted');
+    return () => console.log('CollectionsDashboard unmounting');
+  }, []);
   const smartPickSummary = useMemo(() => {
     if (!smartPicks.length) return null;
     const titles = smartPicks
@@ -181,24 +211,30 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
       : `${first} and ${second} — picked just for you`;
   }, [smartPicks]);
 
+
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || !isHydrated) {
       return;
     }
 
-    const storedValue = window.localStorage.getItem(SMART_PICKS_STATE_KEY);
-    if (storedValue !== null) {
-      setSmartPicksOpen(storedValue === "true");
+    try {
+      console.log('Saving smart picks state:', { smartPicksOpen, profileId: profile.id, timestamp: new Date().toISOString() });
+      const value = smartPicksOpen ? "true" : "false";
+      const key = `framevault:smart-picks-open:${profile.id}`;
+
+      // Save to both localStorage and sessionStorage
+      window.localStorage.setItem(key, value);
+      window.sessionStorage.setItem(key, value);
+    } catch (error) {
+      console.error('Error saving smart picks state:', error);
     }
+  }, [smartPicksOpen, profile.id, isHydrated]);
+
+  useEffect(() => {
+    // Mark as hydrated after initial render
+    setIsHydrated(true);
+    console.log('CollectionsDashboard hydrated, smartPicksOpen:', smartPicksOpen);
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(SMART_PICKS_STATE_KEY, smartPicksOpen ? "true" : "false");
-  }, [smartPicksOpen]);
 
   useEffect(() => {
     setSmartPicks(recommendations ?? []);
@@ -233,7 +269,6 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
       const result = (await response.json()) as { picks?: SmartPick[]; profile?: TasteProfile | null };
       setSmartPicks(result.picks ?? []);
       setSmartProfile(result.profile ?? null);
-      setSmartPicksOpen(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to refresh Smart Picks";
       toast({ title: "Refresh failed", description: message, variant: "error" });
@@ -294,7 +329,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
           animate={{ opacity: 1, y: 0 }}
           className={cn(
             "relative overflow-hidden rounded-3xl",
-            smartPicksOpen ? "glass-card px-8 pt-6 pb-10" : "glass px-8 pt-6 pb-3"
+            smartPicksOpen && isHydrated ? "glass-card px-8 pt-6 pb-10" : "glass px-8 pt-6 pb-3"
           )}
         >
           {/* Background Effects */}
@@ -327,7 +362,7 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                   size="sm"
                   onClick={refreshSmartPicks}
                   disabled={refreshingSmartPicks}
-                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)] cursor-pointer"
+                  className="group hover:bg-white/80 hover:text-accent-primary hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)] cursor-pointer"
                 >
                   <RotateCcw
                     size={16}
@@ -341,16 +376,20 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
                 <Button
                   variant="glass"
                   size="sm"
-                  onClick={() => setSmartPicksOpen((prev) => !prev)}
-                  className="group hover:bg-white/80 hover:text-[#0a0a0f] hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)] cursor-pointer"
-                  aria-expanded={smartPicksOpen}
+                  onClick={() => {
+                    const newState = !smartPicksOpen;
+                    console.log('Toggling smart picks:', { from: smartPicksOpen, to: newState, timestamp: new Date().toISOString() });
+                    setSmartPicksOpen(newState);
+                  }}
+                  className="group hover:bg-white/80 hover:text-accent-primary hover:shadow-[0_12px_32px_rgba(255,255,255,0.2)] cursor-pointer"
+                  aria-expanded={smartPicksOpen && isHydrated}
                   aria-controls="smart-picks-panel"
                 >
                   <ChevronDown
                     size={16}
-                    className={`transition-transform duration-300 ${smartPicksOpen ? "rotate-180" : "rotate-0"}`}
+                    className={`transition-transform duration-300 ${smartPicksOpen && isHydrated ? "rotate-180" : "rotate-0"}`}
                   />
-                  {smartPicksOpen ? "Hide Picks" : "Show Picks"}
+                  {smartPicksOpen && isHydrated ? "Hide Picks" : "Show Picks"}
                 </Button>
               </div>
             </div>
@@ -733,6 +772,8 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
   const [isDeleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const themeConfig = getThemeConfig(extractThemeId(collection.theme));
+
   function shouldIgnoreActivation(target: HTMLElement) {
     return Boolean(target.closest('[data-collection-card-ignore]'));
   }
@@ -833,11 +874,25 @@ function CollectionCard({ collection, profile, onUpdated, onDeleted }: Collectio
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
     >
-      {/* Background Gradient Effect */}
-      <div className="absolute inset-0 bg-gradient-to-br from-accent-primary/5 via-transparent to-accent-secondary/5 rounded-3xl blur-xl group-hover:blur-2xl transition-all duration-500" />
+      {/* Theme Background Gradient Effect */}
+      {themeConfig && (
+        <div
+          className="absolute inset-0 rounded-3xl blur-xl group-hover:blur-2xl transition-all duration-500"
+          style={{
+            backgroundImage: `linear-gradient(135deg, ${themeConfig.gradient.from}, ${themeConfig.gradient.via}, ${themeConfig.gradient.to})`,
+            opacity: 0.25,
+          }}
+        />
+      )}
 
       {/* Main Card */}
-      <div className="relative glass-card p-6 rounded-3xl border border-border-primary hover:border-accent-primary/30 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl">
+      <div
+        className="relative glass-card p-6 rounded-3xl border border-border-primary hover:border-accent-primary/30 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl"
+        style={themeConfig ? {
+          background: `linear-gradient(135deg, ${themeConfig.accent}15, ${themeConfig.accent}08, ${themeConfig.accent}10)`,
+          boxShadow: `0 0 20px -5px ${themeConfig.accent}15`,
+        } : undefined}
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex-1 min-w-0">

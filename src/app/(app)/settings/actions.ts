@@ -29,7 +29,13 @@ export async function updateProfileAction(input: UpdateProfileInput) {
   const supabase = await createSupabaseServerClient(cookieStore);
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
-  if (userError) throw userError;
+  if (userError) {
+    // Handle session missing errors gracefully (user may have signed out)
+    if (userError.message.includes('Auth session missing')) {
+      throw new ApiError("not_authenticated", "Please sign in", 401);
+    }
+    throw userError;
+  }
 
   const user = userData?.user;
   if (!user) {

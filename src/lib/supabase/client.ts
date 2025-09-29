@@ -31,3 +31,11 @@ export function getSupabaseBrowserClient() {
   }
   return client;
 }
+
+/**
+ * Resets the cached Supabase browser client instance. This is used during sign out
+ * to ensure a completely fresh client instance is created on next access.
+ */
+export function resetSupabaseBrowserClient() {
+  client = null;
+}
