@@ -221,6 +221,7 @@ export default function MovieDetailPage({
     tmdbReviews: Review[];
     runtimeFormatted: string | null;
     voteAverage: string | null;
+    rationale: string[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -275,6 +276,7 @@ export default function MovieDetailPage({
     tmdbReviews,
     runtimeFormatted,
     voteAverage,
+    rationale,
   } = movieData;
 
   return (
@@ -464,28 +466,37 @@ export default function MovieDetailPage({
 
       <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
         <section className="space-y-8 rounded-3xl border border-border-primary bg-surface-primary/70 p-6 shadow-lg">
-          <h2 className="text-lg font-semibold text-gradient">Why we picked this for you</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-gradient">Why we picked this for you</h2>
+            {rationale.length > 0 && (
+              <div className="flex flex-wrap gap-y-1.5 gap-x-3">
+                {rationale.map((reason, index) => (
+                  <span
+                    key={`rationale-${index}`}
+                    className="rounded-full border border-accent-primary/30 bg-accent-primary/10 px-2 py-0.5 text-[10px] text-accent-primary/80"
+                  >
+                    {reason}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           <p className="text-sm leading-relaxed text-text-secondary">
             Your viewing taste signals helped surface this title. Add it to a collection to track it, or just explore below to
             learn more.
           </p>
           {providers ? (
             <div className="space-y-6 rounded-2xl border border-border-secondary/70 bg-surface-secondary/40 p-4">
-              <h3 className="text-sm font-semibold text-text-primary">Where to watch</h3>
+              <h3 className="text-sm font-semibold text-gradient">Where to watch</h3>
               <div className="space-y-4">
                 <ProviderSection title="Streaming" providers={providers.stream} />
                 <ProviderSection title="Rent" providers={providers.rent} />
                 <ProviderSection title="Buy" providers={providers.buy} />
               </div>
-              {providers.availableRegions.length ? (
-                <p className="text-xs text-text-tertiary">
-                  Available regions: {providers.availableRegions.join(", ")}
-                </p>
-              ) : null}
             </div>
           ) : (
             <div className="rounded-2xl border border-border-secondary/70 bg-surface-secondary/40 p-4 text-sm text-text-tertiary">
-              Availability data is loading. Refresh in a bit for streaming links.
+              Streaming availability data is not available for this title.
             </div>
           )}
 

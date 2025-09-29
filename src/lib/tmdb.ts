@@ -645,6 +645,12 @@ export async function fetchWatchProviders(
     .maybeSingle();
 
   if (cachedError && cachedError.code !== "PGRST116") {
+    // If the column doesn't exist, we'll fetch fresh data and not cache it
+    if (cachedError.code === "42703") {
+      console.warn("watch_providers column not found, fetching fresh data without caching");
+      const fresh = await tmdbFetch<TMDBWatchProvidersResponse>(`movie/${tmdbId}/watch/providers`);
+      return processWatchProvidersResponse(fresh, region);
+    }
     throw cachedError;
   }
 
@@ -661,17 +667,26 @@ export async function fetchWatchProviders(
       const fresh = await tmdbFetch<TMDBWatchProvidersResponse>(`movie/${tmdbId}/watch/providers`);
       payload = fresh;
 
-      if (cachedRow) {
-        const { error } = await service
-          .from("movies")
-          .update({ watch_providers: fresh })
-          .eq("tmdb_id", tmdbId);
-        if (error) throw error;
-      } else {
-        const { error } = await service
-          .from("movies")
-          .insert({ tmdb_id: tmdbId, watch_providers: fresh });
-        if (error) throw error;
+      // Try to cache the data, but don't fail if the column doesn't exist
+      try {
+        if (cachedRow) {
+          const { error } = await service
+            .from("movies")
+            .update({ watch_providers: fresh })
+            .eq("tmdb_id", tmdbId);
+          if (error && error.code !== "42703") throw error;
+        } else {
+          const { error } = await service
+            .from("movies")
+            .insert({ tmdb_id: tmdbId, watch_providers: fresh });
+          if (error && error.code !== "42703") throw error;
+        }
+      } catch (cacheError: unknown) {
+        if (cacheError && typeof cacheError === 'object' && 'code' in cacheError && cacheError.code === "42703") {
+          console.warn("Unable to cache watch providers - column doesn't exist");
+        } else {
+          throw cacheError;
+        }
       }
     } catch (error) {
       if (!payload) {
