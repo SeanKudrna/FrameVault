@@ -19,7 +19,13 @@ export async function updateOnboardingStateAction(partial: UpdateOnboardingInput
   const supabase = await createSupabaseServerClient(cookieStore);
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
-  if (userError) throw userError;
+  if (userError) {
+    // Handle session missing errors gracefully (user may have signed out)
+    if (userError.message.includes('Auth session missing')) {
+      throw new ApiError("not_authenticated", "Sign in required", 401);
+    }
+    throw userError;
+  }
   const user = userData?.user;
   if (!user) {
     throw new ApiError("not_authenticated", "Sign in required", 401);

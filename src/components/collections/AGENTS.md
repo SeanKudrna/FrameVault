@@ -8,7 +8,8 @@ Contains all UI related to managing collections: dashboards, server-action orche
   - Renders the `/app` grid view with create buttons, plan gating, and `CollectionCard` interactions.
   - Invokes server actions (`createCollectionAction`, `updateCollectionDetailsAction`, `deleteCollectionAction`) and handles toast feedback.
   - `CollectionCard` manages navigation to editors, hover menu triggers, and rename/public toggle flows.
-  - Pro members see the collapsible "Smart Picks" rail, pulling personalised recommendations from `/api/recommendations` when expanded.
+  - Pro members see the collapsible "Smart Picks" rail with smooth animations, pulling personalised recommendations from `/api/recommendations` when expanded.
+  - `SmartPicksCarousel` displays recommendations in a responsive carousel with navigation controls only when needed.
 - `collection-editor.tsx`:
   - Implements the full collection editing workspace, including item reordering (drag-and-drop), TMDB search integration, note editing, and publish toggles.
   - Calls server actions (`addMovieToCollectionAction`, `removeCollectionItemAction`, `reorderCollectionItemsAction`, `updateCollectionDetailsAction`, `updateCollectionItemNoteAction`).

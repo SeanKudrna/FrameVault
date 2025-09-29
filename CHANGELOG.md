@@ -4,10 +4,37 @@ All notable changes to FrameVault will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.3] - 2025-09-28
+
+### Added
+- Comprehensive and robust comments added to collections-dashboard.tsx, collection-editor.tsx, supabase-provider.tsx, and billing-settings.tsx for better code documentation and maintainability.
+- Personalized rationale for movie recommendations based on user preferences, displayed in movie detail views.
+- Reviews section and modal for displaying TMDB reviews with enhanced TMDB data models including cast members.
+- Smart picks functionality with memoized summaries, refresh capability, and improved layout in CollectionsDashboard.
+- Loading states and skeleton screens for improved perceived performance across the app.
+- Enhanced AGENTS documentation for new Smart Pick movie detail view and component interactions.
+
+### Changed
+- Enhanced button hover effects: text color changes to dark on hover for all button variants (default, secondary, destructive, success, warning) using `hover:!text-[#0a0a0f]`.
+- Updated smart picks movie titles to change to purple color (`text-accent-primary`) on hover instead of gradient effect.
+- Improved cursor pointer styles (`cursor-pointer`) for authentication buttons, landing page buttons, and sign-up toggle links to indicate clickability.
+- Refactored SmartPicksCarousel to use pagination instead of index-based navigation with smoother transitions and better state management.
+- Enhanced SmartPickCard layout with improved visual appeal, runtime display, and TMDB link adjustments.
+- Refactored AddToCollectionForm and ProfileSettingsForm to use custom Select component for improved UI consistency and accessibility.
+- Updated globals.css with enhanced design tokens and modern UI component styles.
+- Revamped landing page with interactive features and polished storytelling.
+- Enhanced sign-in page with persistent navigation link and improved error handling.
+- Updated pricing page layout and feature comparison for better user experience.
+- Improved CollectionsDashboard with keyboard navigation for SmartPickCard and better responsiveness.
+- Enhanced SmartPicksCarousel and SmartPickCard components with adjusted grid structure, spacing, and genre name resolution.
+
 ### Fixed
 - Stripe schedule-based downgrades now populate `pending_plan`/`next_plan`, ensuring deferred plan changes appear on the billing screen and apply automatically at renewal.
+- Implemented error handling for missing authentication sessions across various components and API routes.
+- Enhanced error handling for watch provider fetching and movie data retrieval.
+- Improved user data fetching to gracefully handle session absence and enhance overall stability.
 
-## [0.0.3] - 2025-09-30
+## [0.0.2] - 2025-09-27
 
 ### Added
 - Deferred subscription downgrades powered by new Supabase functions (`apply_subscription_change`, `compute_effective_plan`, `expire_lapsed_plans`) and a nightly plan sweeper script.

@@ -9,7 +9,13 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const supabase = await getSupabaseServerClient();
   const [{ data: userData, error: userError }] = await Promise.all([
-    supabase.auth.getUser(),
+    supabase.auth.getUser().catch((error) => {
+      // Handle auth session missing errors gracefully
+      if (error?.message?.includes('Auth session missing')) {
+        return { data: { user: null }, error: null };
+      }
+      throw error;
+    }),
   ]);
 
   if (userError) {

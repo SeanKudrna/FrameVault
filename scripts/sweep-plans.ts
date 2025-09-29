@@ -8,12 +8,12 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data, error } = await supabase.rpc("expire_lapsed_plans", { batch_size: 500 });
+  const { data, error } = await supabase.rpc("expire_lapsed_plans", { batch_size: 500 } as any);
   if (error) {
     throw error;
   }
 
-  const results = data ?? [];
+  const results = (data as any[]) ?? [];
   if (results.length === 0) {
     console.log("No plans required expiry");
     return;

@@ -6,7 +6,7 @@ Provider components establish global React context for Supabase, React Query, an
 ## Key Components
 - `app-providers.tsx` composes `ReactQueryProvider`, `ToastProvider`, and `SupabaseProvider`, passing initial session/profile from the server.
 - `react-query-provider.tsx` creates a `QueryClient` per browser session and mounts devtools in non-production environments.
-- `supabase-provider.tsx` instantiates the browser Supabase client, revalidates sessions via `auth.getUser()`, tracks profile state, listens for profile updates over Supabase Realtime (plan downgrades/upgrades), exposes `refreshSession`/`signOut`, and responds to auth state changes.
+- `supabase-provider.tsx` instantiates the browser Supabase client, revalidates sessions via `auth.getUser()`, tracks profile state, listens for profile updates over Supabase Realtime (plan downgrades/upgrades), exposes `refreshSession`/`signOut`, responds to auth state changes, and automatically navigates to `/app` when users sign in from auth pages.
 - `toast-provider.tsx` provides a lightweight toast manager on top of Radix UI primitives, exposing `useToast` for triggering notifications.
 
 ## Update Protocol

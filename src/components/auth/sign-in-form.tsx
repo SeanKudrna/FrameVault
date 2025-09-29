@@ -24,30 +24,11 @@ export function SignInForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function waitForSession({ maxAttempts = 25, delayMs = 200 } = {}) {
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) {
-        if (attempt === maxAttempts - 1) {
-          throw error;
-        }
-      } else if (data.session) {
-        void refreshSession().catch(() => undefined);
-        return data.session;
-      }
-
-      if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-
-    return null;
-  }
 
   /**
    * Handles form submission by performing either a password sign-in or sign-up
-   * request, then refreshing the session context so protected routes render
-   * immediately.
+   * request. The SupabaseProvider will automatically handle navigation on successful
+   * authentication.
    */
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,8 +39,6 @@ export function SignInForm() {
       if (!email || !password) {
         throw new Error("Email and password are required");
       }
-
-      let shouldAwaitSession = true;
 
       if (mode === "sign-in") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -74,9 +53,7 @@ export function SignInForm() {
         });
         if (signUpError) throw signUpError;
 
-        shouldAwaitSession = Boolean(signUpData.session);
-
-        if (!shouldAwaitSession) {
+        if (!signUpData.session) {
           setLoading(false);
           const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email)}`;
           router.replace(verifyEmailUrl);
@@ -85,27 +62,19 @@ export function SignInForm() {
         }
       }
 
-      const session = shouldAwaitSession
-        ? await waitForSession({ maxAttempts: mode === "sign-in" ? 30 : 20 })
-        : null;
+      setLoading(false);
 
-      if (!session) {
-        if (mode === "sign-in") {
-          throw new Error("We couldn’t verify your session yet. Please try again.");
+      // Simple redirect - let the server handle session establishment
+      if (typeof window !== "undefined") {
+        const currentPath = window.location.pathname;
+        if (currentPath.startsWith("/auth/") || currentPath === "/") {
+          router.replace("/app");
+        } else {
+          router.refresh();
         }
-
-        const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email)}`;
-        setLoading(false);
-        router.replace(verifyEmailUrl);
-        setMode("sign-in");
-        return;
       }
-
-      router.replace("/app");
-      router.refresh();
     } catch (err) {
       setError(formatError(err));
-    } finally {
       setLoading(false);
     }
   }
@@ -161,7 +130,7 @@ export function SignInForm() {
           <button
             type="button"
             onClick={() => setMode("sign-up")}
-            className="text-indigo-300 hover:text-indigo-200"
+            className="text-indigo-300 hover:text-indigo-200 cursor-pointer"
           >
             Need an account? Sign up instead.
           </button>
@@ -169,7 +138,7 @@ export function SignInForm() {
           <button
             type="button"
             onClick={() => setMode("sign-in")}
-            className="text-indigo-300 hover:text-indigo-200"
+            className="text-indigo-300 hover:text-indigo-200 cursor-pointer"
           >
             Already joined? Sign in.
           </button>

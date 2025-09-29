@@ -67,8 +67,20 @@ export default async function RootLayout({
 }>) {
   const supabase = await getSupabaseServerClient();
   const [userResponse, sessionResponse] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase.auth.getSession(),
+    supabase.auth.getUser().catch((error) => {
+      // Handle auth session missing errors gracefully
+      if (error?.message?.includes('Auth session missing')) {
+        return { data: { user: null }, error: null };
+      }
+      throw error;
+    }),
+    supabase.auth.getSession().catch((error) => {
+      // Handle auth session missing errors gracefully
+      if (error?.message?.includes('Auth session missing')) {
+        return { data: { session: null }, error: null };
+      }
+      throw error;
+    }),
   ]);
 
   const rawSession = sessionResponse.data.session ?? null;

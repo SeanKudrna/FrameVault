@@ -4,7 +4,7 @@
 Defines the actual sign-in page rendered to end users.
 
 ## Key File
-- `page.tsx` instantiates the Supabase server client, redirects logged-in users to `/app`, and returns the `SignInForm` component within the themed background shell.
+- `page.tsx` instantiates the Supabase server client, redirects logged-in users to `/app`, and returns the `SignInForm` component within the themed background shell alongside a persistent "Back to home" link.
 
 ## Integration Notes
 - Relies on `SignInForm` (`src/components/auth`) for client-side Supabase auth and state handling.

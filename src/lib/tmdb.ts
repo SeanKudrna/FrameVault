@@ -24,6 +24,36 @@ const PROVIDERS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
  */
 const env = getServerEnv();
 
+const TMDB_GENRE_LOOKUP: Record<number, string> = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Science Fiction",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+};
+
+export function resolveGenreName(id: number, provided?: string | null) {
+  const cleaned = (provided ?? "").trim();
+  if (cleaned.length > 0 && cleaned.toLowerCase() !== "unknown") {
+    return cleaned;
+  }
+  return TMDB_GENRE_LOOKUP[id] ?? "Unknown";
+}
+
 /**
  * Lightweight representation of a TMDB movie that is safe to return to clients or store locally.
  */
@@ -38,6 +68,38 @@ export interface MovieSummary {
   genres: { id: number; name: string }[];
   runtime: number | null;
   voteAverage: number | null;
+  tagline?: string | null;
+}
+
+export interface MovieCastMember {
+  id: number;
+  name: string;
+  character: string | null;
+  order: number | null;
+  profileUrl: string | null;
+}
+
+export interface MovieCrewMember {
+  id: number;
+  name: string;
+  job: string | null;
+  department: string | null;
+}
+
+export interface MovieReview {
+  id: string;
+  author: string;
+  username: string | null;
+  rating: number | null;
+  createdAt: string | null;
+  content: string;
+  url: string | null;
+}
+
+export interface MovieDetail extends MovieSummary {
+  cast: MovieCastMember[];
+  crew: MovieCrewMember[];
+  reviews: MovieReview[];
 }
 
 export interface ProviderBadge {
@@ -71,18 +133,36 @@ interface TMDBMovieResult {
   vote_average?: number | null;
   vote_count?: number | null;
   popularity?: number | null;
+  tagline?: string | null;
   credits?: {
     cast?: Array<{
       id: number;
       name?: string;
       character?: string;
       order?: number;
+      profile_path?: string | null;
     }>;
     crew?: Array<{
       id: number;
       name?: string;
       job?: string;
       department?: string;
+    }>;
+  };
+  reviews?: {
+    results?: Array<{
+      id: string;
+      author?: string;
+      content?: string;
+      url?: string;
+      created_at?: string;
+      updated_at?: string;
+      author_details?: {
+        name?: string;
+        username?: string;
+        rating?: number | null;
+        avatar_path?: string | null;
+      };
     }>;
   };
 }
@@ -151,37 +231,194 @@ function mapMovie(payload: TMDBMovieResult): MovieSummary {
     releaseYear: Number.isNaN(releaseYear) ? null : releaseYear,
     genres:
       payload.genres ??
-      (payload.genre_ids?.map((id) => ({ id, name: "" })) ?? []),
+      (payload.genre_ids?.map((id) => ({ id, name: resolveGenreName(id) })) ?? []),
     runtime: payload.runtime ?? null,
     voteAverage: payload.vote_average ?? null,
+    tagline: payload.tagline ?? null,
   };
 }
 
 /**
  * Converts a cached Supabase `movies` row back into the `MovieSummary` representation.
  */
-function mapCachedMovie(row: Movie): MovieSummary {
+export function mapCachedMovie(row: Movie): MovieSummary {
   let fallbackPosterUrl: string | null = null;
   if (row.tmdb_json && typeof row.tmdb_json === "object" && "fallbackPosterUrl" in row.tmdb_json) {
     const fallback = (row.tmdb_json as Record<string, unknown>)["fallbackPosterUrl"];
     fallbackPosterUrl = typeof fallback === "string" ? fallback : null;
   }
+  const cachedGenres = Array.isArray(row.genres)
+    ? (row.genres as { id: number; name?: string | null }[]).map((genre) => ({
+        id: genre.id,
+        name: resolveGenreName(genre.id, genre.name ?? null),
+      }))
+    : [];
+  const tmdbJson = (row.tmdb_json ?? {}) as Record<string, unknown>;
   return {
     tmdbId: row.tmdb_id,
     title: row.title ?? "Untitled",
-    overview: row.tmdb_json && typeof row.tmdb_json === "object" && "overview" in row.tmdb_json ? (row.tmdb_json as Record<string, unknown>)["overview"] as string | null : null,
+    overview: typeof tmdbJson.overview === "string" ? tmdbJson.overview : null,
     posterUrl: row.poster_url ?? fallbackPosterUrl,
     fallbackPosterUrl,
     backdropUrl: row.backdrop_url,
     releaseYear: row.release_year ?? null,
-    genres: Array.isArray(row.genres)
-      ? (row.genres as { id: number; name: string }[])
-      : [],
+    genres: cachedGenres,
     runtime: row.runtime ?? null,
-    voteAverage:
-      row.tmdb_json && typeof row.tmdb_json === "object" && "vote_average" in row.tmdb_json
-        ? Number((row.tmdb_json as Record<string, unknown>)["vote_average"])
-        : null,
+    voteAverage: typeof tmdbJson.vote_average === "number" ? tmdbJson.vote_average : null,
+    tagline: typeof tmdbJson.tagline === "string" ? tmdbJson.tagline : null,
+  };
+}
+
+/**
+ * Fetches a movie summary by TMDB id, using cached Supabase data when available and
+ * refreshing from TMDB as needed. Returns null when the movie cannot be resolved.
+ */
+export async function getMovieSummaryById(tmdbId: number, options: { refresh?: boolean } = {}) {
+  if (!Number.isFinite(tmdbId)) {
+    throw new TypeError("tmdbId must be a finite number");
+  }
+
+  const service = getSupabaseServiceRoleClient();
+  const { data: cached, error: cacheError } = await service
+    .from("movies")
+    .select("*")
+    .eq("tmdb_id", tmdbId)
+    .maybeSingle();
+
+  if (cacheError && cacheError.code !== "PGRST116") {
+    throw cacheError;
+  }
+
+  const shouldRefresh = options.refresh === true;
+  if (cached && !shouldRefresh) {
+    return mapCachedMovie(cached);
+  }
+
+  try {
+    const payload = await tmdbFetch<TMDBMovieResult>(`movie/${tmdbId}`, {
+      append_to_response: "credits",
+      language: "en-US",
+    });
+
+    let mapped = mapMovie(payload);
+    const fallbackPosterUrl = await findBestPosterImage(tmdbId, payload.poster_path ?? null);
+    if (fallbackPosterUrl) {
+      mapped = {
+        ...mapped,
+        posterUrl: fallbackPosterUrl,
+        fallbackPosterUrl,
+      };
+    }
+
+    await cacheMovies([mapped], { [mapped.tmdbId]: { ...payload, fallbackPosterUrl } });
+    return mapped;
+  } catch (error) {
+    if (cached) {
+      return mapCachedMovie(cached);
+    }
+    if (error instanceof TMDBError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function mapCastMember(member: NonNullable<TMDBMovieResult["credits"]>["cast"][number]): MovieCastMember {
+  return {
+    id: member.id,
+    name: member.name ?? "Unknown",
+    character: member.character ?? null,
+    order: typeof member.order === "number" ? member.order : null,
+    profileUrl: member.profile_path ? buildImage(member.profile_path, "w185") : null,
+  };
+}
+
+function mapCrewMember(member: NonNullable<TMDBMovieResult["credits"]>["crew"][number]): MovieCrewMember {
+  return {
+    id: member.id,
+    name: member.name ?? "Unknown",
+    job: member.job ?? null,
+    department: member.department ?? null,
+  };
+}
+
+function mapReview(review: NonNullable<TMDBMovieResult["reviews"]>["results"][number]): MovieReview {
+  const authorDetails = review.author_details ?? {};
+  return {
+    id: review.id,
+    author: review.author || authorDetails.name || authorDetails.username || "TMDB User",
+    username: authorDetails.username ?? null,
+    rating: typeof authorDetails.rating === "number" ? authorDetails.rating : null,
+    createdAt: review.created_at ?? review.updated_at ?? null,
+    content: review.content ?? "",
+    url: review.url ?? null,
+  };
+}
+
+export async function getMovieDetail(tmdbId: number, options: { refresh?: boolean } = {}): Promise<MovieDetail | null> {
+  if (!Number.isFinite(tmdbId)) {
+    throw new TypeError("tmdbId must be a finite number");
+  }
+
+  const service = getSupabaseServiceRoleClient();
+  const { data: cached, error: cacheError } = await service
+    .from("movies")
+    .select("*")
+    .eq("tmdb_id", tmdbId)
+    .maybeSingle();
+  if (cacheError && cacheError.code !== "PGRST116") {
+    throw cacheError;
+  }
+
+  const shouldRefresh = options.refresh === true;
+  let payload: TMDBMovieResult | null = null;
+  if (cached && !shouldRefresh && cached.tmdb_json && typeof cached.tmdb_json === "object") {
+    payload = cached.tmdb_json as TMDBMovieResult;
+  }
+
+  let summary: MovieSummary | null = cached ? mapCachedMovie(cached) : null;
+
+  if (!payload || !payload.reviews || shouldRefresh) {
+    const freshPayload = await tmdbFetch<TMDBMovieResult>(`movie/${tmdbId}`, {
+      append_to_response: "credits,reviews",
+      language: "en-US",
+    });
+
+    let mapped = mapMovie(freshPayload);
+    const fallbackPosterUrl = await findBestPosterImage(tmdbId, freshPayload.poster_path ?? null);
+    if (fallbackPosterUrl) {
+      mapped = {
+        ...mapped,
+        posterUrl: fallbackPosterUrl,
+        fallbackPosterUrl,
+      };
+    }
+
+    await cacheMovies([mapped], { [mapped.tmdbId]: { ...freshPayload, fallbackPosterUrl } });
+    payload = freshPayload;
+    summary = mapped;
+  }
+
+  if (!summary) {
+    if (!payload) return null;
+    summary = mapMovie(payload);
+  }
+
+  const cast = payload?.credits?.cast ? payload.credits.cast.slice(0, 12).map(mapCastMember) : [];
+  const crew = payload?.credits?.crew ? payload.credits.crew.map(mapCrewMember) : [];
+  const reviews = payload?.reviews?.results
+    ? payload.reviews.results
+        .map(mapReview)
+        .filter((review) => review.content.trim().length > 0)
+        .slice(0, 20)
+    : [];
+
+  return {
+    ...summary,
+    tagline: payload?.tagline ?? summary.tagline ?? null,
+    cast,
+    crew,
+    reviews,
   };
 }
 
@@ -344,13 +581,17 @@ async function cacheMovies(movies: MovieSummary[], tmdbPayloads?: Record<number,
     release_year: movie.releaseYear,
     poster_url: movie.posterUrl,
     backdrop_url: movie.backdropUrl,
-    genres: movie.genres,
+    genres: movie.genres.map((genre) => ({
+      id: genre.id,
+      name: resolveGenreName(genre.id, genre.name),
+    })),
     runtime: movie.runtime,
     tmdb_json:
       tmdbPayloads?.[movie.tmdbId] ?? {
         overview: movie.overview,
         vote_average: movie.voteAverage,
         fallbackPosterUrl: movie.fallbackPosterUrl ?? null,
+        tagline: movie.tagline ?? null,
       },
   }));
 
@@ -404,6 +645,12 @@ export async function fetchWatchProviders(
     .maybeSingle();
 
   if (cachedError && cachedError.code !== "PGRST116") {
+    // If the column doesn't exist, we'll fetch fresh data and not cache it
+    if (cachedError.code === "42703") {
+      console.warn("watch_providers column not found, fetching fresh data without caching");
+      const fresh = await tmdbFetch<TMDBWatchProvidersResponse>(`movie/${tmdbId}/watch/providers`);
+      return processWatchProvidersResponse(fresh, region);
+    }
     throw cachedError;
   }
 
@@ -420,17 +667,26 @@ export async function fetchWatchProviders(
       const fresh = await tmdbFetch<TMDBWatchProvidersResponse>(`movie/${tmdbId}/watch/providers`);
       payload = fresh;
 
-      if (cachedRow) {
-        const { error } = await service
-          .from("movies")
-          .update({ watch_providers: fresh })
-          .eq("tmdb_id", tmdbId);
-        if (error) throw error;
-      } else {
-        const { error } = await service
-          .from("movies")
-          .insert({ tmdb_id: tmdbId, watch_providers: fresh });
-        if (error) throw error;
+      // Try to cache the data, but don't fail if the column doesn't exist
+      try {
+        if (cachedRow) {
+          const { error } = await service
+            .from("movies")
+            .update({ watch_providers: fresh })
+            .eq("tmdb_id", tmdbId);
+          if (error && error.code !== "42703") throw error;
+        } else {
+          const { error } = await service
+            .from("movies")
+            .insert({ tmdb_id: tmdbId, watch_providers: fresh });
+          if (error && error.code !== "42703") throw error;
+        }
+      } catch (cacheError: unknown) {
+        if (cacheError && typeof cacheError === 'object' && 'code' in cacheError && cacheError.code === "42703") {
+          console.warn("Unable to cache watch providers - column doesn't exist");
+        } else {
+          throw cacheError;
+        }
       }
     } catch (error) {
       if (!payload) {

@@ -11,7 +11,13 @@ import type { Profile, OnboardingState } from "@/lib/supabase/types";
 import { getSmartPicksForUser } from "@/lib/recommendations";
 export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const { data: userData, error: userError } = await supabase.auth.getUser().catch((error) => {
+    // Handle auth session missing errors gracefully
+    if (error?.message?.includes('Auth session missing')) {
+      return { data: { user: null }, error: null };
+    }
+    throw error;
+  });
 
   if (userError) {
     throw userError;
@@ -34,7 +40,7 @@ export default async function DashboardPage() {
 
   const { data: collectionsData, error: collectionsError } = await supabase
     .from("collections")
-    .select("id, title, slug, description, is_public, created_at, updated_at, collection_items(count)")
+    .select("id, title, slug, description, is_public, created_at, updated_at, theme, collection_items(count)")
     .eq("owner_id", user.id)
     .order("created_at", { ascending: true });
 
@@ -58,6 +64,7 @@ export default async function DashboardPage() {
     is_public: collection.is_public,
     created_at: collection.created_at,
     updated_at: collection.updated_at,
+    theme: collection.theme,
     item_count: Array.isArray(collection.collection_items)
       ? (collection.collection_items[0]?.count as number | undefined) ?? 0
       : 0,
@@ -74,7 +81,7 @@ export default async function DashboardPage() {
 
   return (
     <CollectionsDashboard
-      profile={profileData as Profile}
+      profile={profileData}
       collections={collections}
       recommendations={recommendations?.picks ?? null}
       tasteProfile={recommendations?.profile ?? null}
