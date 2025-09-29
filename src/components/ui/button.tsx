@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * Modern variants backing the shared `Button` component with glass morphism and gradient effects.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/50 disabled:pointer-events-none disabled:opacity-50 relative overflow-hidden",
+  "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/50 disabled:pointer-events-none disabled:opacity-50 relative overflow-hidden cursor-pointer",
   {
     variants: {
       variant: {
@@ -23,6 +23,7 @@ const buttonVariants = cva(
           "shadow-[0_4px_20px_rgba(139,92,246,0.3)]",
           "hover:shadow-[0_8px_32px_rgba(139,92,246,0.4)]",
           "hover:scale-105 active:scale-95",
+          "hover:!text-[#0a0a0f]",
           "before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity",
         ],
         secondary: [
@@ -30,6 +31,7 @@ const buttonVariants = cva(
           "shadow-[0_4px_20px_rgba(6,182,212,0.3)]",
           "hover:shadow-[0_8px_32px_rgba(6,182,212,0.4)]",
           "hover:scale-105 active:scale-95",
+          "hover:!text-[#0a0a0f]",
           "before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity",
         ],
         glass: [
@@ -53,6 +55,7 @@ const buttonVariants = cva(
           "shadow-[0_4px_20px_rgba(239,68,68,0.3)]",
           "hover:shadow-[0_8px_32px_rgba(239,68,68,0.4)]",
           "hover:scale-105 active:scale-95",
+          "hover:!text-[#0a0a0f]",
           "before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity",
         ],
         success: [
@@ -60,6 +63,7 @@ const buttonVariants = cva(
           "shadow-[0_4px_20px_rgba(34,197,94,0.3)]",
           "hover:shadow-[0_8px_32px_rgba(34,197,94,0.4)]",
           "hover:scale-105 active:scale-95",
+          "hover:!text-[#0a0a0f]",
           "before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity",
         ],
         warning: [
@@ -67,6 +71,7 @@ const buttonVariants = cva(
           "shadow-[0_4px_20px_rgba(245,158,11,0.3)]",
           "hover:shadow-[0_8px_32px_rgba(245,158,11,0.4)]",
           "hover:scale-105 active:scale-95",
+          "hover:!text-[#0a0a0f]",
           "before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity",
         ],
       },

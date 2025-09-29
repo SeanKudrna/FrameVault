@@ -131,7 +131,7 @@ export default function LandingPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <Link
                 href="/auth/sign-in"
-                className="inline-flex h-14 px-8 text-base font-semibold items-center justify-center gap-2 rounded-xl font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/50 disabled:pointer-events-none disabled:opacity-50 relative overflow-hidden bg-gradient-to-r from-accent-primary via-accent-secondary to-accent-tertiary text-white hover:!text-[#0a0a0f] shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:shadow-[0_8px_32px_rgba(139,92,246,0.4)] hover:scale-105 active:scale-95 before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity"
+                className="inline-flex h-14 px-8 text-base font-semibold items-center justify-center gap-2 rounded-xl font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/50 disabled:pointer-events-none disabled:opacity-50 relative overflow-hidden bg-gradient-to-r from-accent-primary via-accent-secondary to-accent-tertiary text-white hover:!text-[#0a0a0f] shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:shadow-[0_8px_32px_rgba(139,92,246,0.4)] hover:scale-105 active:scale-95 before:absolute before:inset-0 before:bg-white/10 before:opacity-0 hover:before:opacity-100 before:transition-opacity cursor-pointer"
               >
                 Start Curating Free
               </Link>

@@ -1,9 +1,51 @@
 "use client";
 
 /**
- * Interactive editor for managing collection metadata, items, and publication
- * state. Handles drag-and-drop ordering, TMDB search integration, and server
- * action orchestration from the client.
+ * Collection Editor Component
+ *
+ * Comprehensive editing interface for movie collections with advanced features:
+ *
+ * Core Functionality:
+ * - Drag-and-drop reordering of collection items with keyboard accessibility
+ * - TMDB movie search and addition with duplicate prevention
+ * - Inline editing of collection metadata (title, description, visibility)
+ * - Custom cover image upload and theme customization (Plus/Pro features)
+ * - Personal notes for individual movies
+ * - Watch status tracking (Watched/Watching/Want to watch)
+ * - Streaming availability display (Pro feature)
+ * - Collaborator management (Pro feature)
+ *
+ * Technical Architecture:
+ * - DnD Kit for robust drag-and-drop with touch and keyboard support
+ * - Optimistic UI updates with rollback on server errors
+ * - Real-time synchronization with Supabase for collaborative editing
+ * - Image processing pipeline for cover uploads (crop to 16:9 aspect ratio)
+ * - Complex state management with multiple async operations
+ * - Responsive design with mobile-optimized interactions
+ *
+ * State Management:
+ * - Local state for UI interactions and form data
+ * - Server state synchronization via Next.js server actions
+ * - Optimistic updates with error recovery
+ * - Hydration-safe initialization
+ *
+ * Performance Optimizations:
+ * - Memoized callbacks and computed values
+ * - Efficient re-rendering with targeted state updates
+ * - Image lazy loading and optimization
+ * - Debounced search and API calls
+ *
+ * Accessibility:
+ * - Full keyboard navigation support
+ * - Screen reader announcements for drag operations
+ * - Focus management during modal interactions
+ * - ARIA labels and live regions
+ *
+ * Error Handling:
+ * - Graceful degradation for failed operations
+ * - User-friendly error messages
+ * - State consistency maintenance
+ * - Recovery mechanisms for interrupted operations
  */
 
 import Image from "next/image";
@@ -68,17 +110,42 @@ import type { Profile, WatchStatus } from "@/lib/supabase/types";
 type ToastFn = ReturnType<typeof useToast>["toast"];
 
 /**
- * DOM id referenced by the drag-and-drop accessibility instructions element.
+ * Drag-and-Drop Accessibility Constants
+ *
+ * These constants support screen reader users during drag-and-drop operations.
+ * The instructions element provides guidance on keyboard navigation for reordering items.
+ *
+ * DnD Kit automatically manages ARIA attributes and focus, but we provide
+ * additional context through these constants for better accessibility.
  */
 const DND_INSTRUCTIONS_ID = "framevault-dnd-instructions";
+
 /**
- * Screen reader guidance describing how to reorder items with the keyboard.
+ * Screen Reader Instructions for Drag-and-Drop
+ *
+ * Provides clear guidance for keyboard users on how to interact with
+ * draggable collection items. These instructions are referenced by
+ * the drag overlay and individual draggable elements.
  */
 const DND_SCREEN_READER_INSTRUCTIONS = {
   draggable:
     "Press space bar to pick up an item. Use the arrow keys to move, space bar to drop, and escape to cancel.",
 } as const;
 
+/**
+ * Watch Status Configuration
+ *
+ * Defines the visual and behavioral properties for each watch status.
+ * Used throughout the editor for consistent status display and interactions.
+ *
+ * Each status includes:
+ * - Display label for UI elements
+ * - Associated icon component from Lucide React
+ * - Tailwind CSS classes for status pill styling
+ * - Menu label for dropdown actions
+ *
+ * The color schemes use theme-aware colors that work with both light and dark modes.
+ */
 const STATUS_CONFIG: Record<WatchStatus, { label: string; Icon: LucideIcon; pillClass: string; menuLabel: string }> = {
   watched: {
     label: "Watched",
@@ -100,6 +167,21 @@ const STATUS_CONFIG: Record<WatchStatus, { label: string; Icon: LucideIcon; pill
   },
 };
 
+/**
+ * Image Processing Utilities
+ *
+ * These functions handle the client-side image processing pipeline for collection covers.
+ * The process involves converting files to data URLs, loading them into image elements,
+ * and cropping them to the required 16:9 aspect ratio for consistent display.
+ */
+
+/**
+ * Converts a File object to a base64 data URL for processing.
+ *
+ * @param file - The image file to convert
+ * @returns Promise resolving to data URL string
+ * @throws Error if file reading fails
+ */
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -109,6 +191,13 @@ async function fileToDataUrl(file: File) {
   });
 }
 
+/**
+ * Loads a data URL into an HTML Image element for manipulation.
+ *
+ * @param dataUrl - Base64 encoded image data
+ * @returns Promise resolving to loaded Image element
+ * @throws Error if image loading fails
+ */
 async function loadImage(dataUrl: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
@@ -118,30 +207,54 @@ async function loadImage(dataUrl: string) {
   });
 }
 
+/**
+ * Crops an image to 16:9 aspect ratio for collection cover display.
+ *
+ * Algorithm:
+ * 1. Load the image file into memory
+ * 2. Calculate cropping dimensions to maintain 16:9 ratio
+ * 3. Center-crop the image (remove excess from longer dimension)
+ * 4. Resize to target dimensions (1600x900) for consistent quality
+ * 5. Convert back to JPEG format with 92% quality
+ *
+ * This ensures all collection covers have consistent dimensions and aspect ratios
+ * while preserving the most visually important center portion of the image.
+ *
+ * @param file - Original image file uploaded by user
+ * @returns Promise resolving to processed File with cropped image
+ * @throws Error if canvas operations fail
+ */
 async function cropImageToCover(file: File) {
+  // Convert file to data URL for processing
   const dataUrl = await fileToDataUrl(file);
   const image = await loadImage(dataUrl);
 
+  // Target dimensions for collection covers (16:9 aspect ratio)
   const targetWidth = 1600;
   const targetHeight = 900;
   const targetAspect = targetWidth / targetHeight;
   const sourceAspect = image.width / image.height;
 
-  let sx = 0;
-  let sy = 0;
-  let sWidth = image.width;
-  let sHeight = image.height;
+  // Calculate cropping coordinates to center the image
+  let sx = 0; // Source X coordinate
+  let sy = 0; // Source Y coordinate
+  let sWidth = image.width; // Source width to crop
+  let sHeight = image.height; // Source height to crop
 
+  // Determine crop dimensions based on aspect ratio comparison
   if (sourceAspect > targetAspect) {
+    // Image is wider than 16:9 - crop width, keep full height
     sHeight = image.height;
     sWidth = sHeight * targetAspect;
-    sx = (image.width - sWidth) / 2;
+    sx = (image.width - sWidth) / 2; // Center horizontally
   } else {
+    // Image is taller than 16:9 - crop height, keep full width
     sWidth = image.width;
     sHeight = sWidth / targetAspect;
-    sy = (image.height - sHeight) / 2;
+    sy = (image.height - sHeight) / 2; // Center vertically
   }
 
+  // Create canvas and draw cropped image
   const canvas = document.createElement("canvas");
   canvas.width = targetWidth;
   canvas.height = targetHeight;
@@ -149,39 +262,55 @@ async function cropImageToCover(file: File) {
   if (!ctx) {
     throw new Error("Canvas context unavailable");
   }
+
+  // Draw the cropped portion scaled to target size
   ctx.drawImage(image, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
+  // Convert canvas to JPEG blob
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => {
       if (result) resolve(result);
       else reject(new Error("Unable to process image"));
-    }, "image/jpeg", 0.92);
+    }, "image/jpeg", 0.92); // 92% quality for good balance of size/quality
   });
 
+  // Return as File object with descriptive name
   return new File([blob], `collection-cover-${Date.now()}.jpg`, { type: "image/jpeg" });
 }
 
 /**
- * Props required to render the collection editor.
+ * Props for the Collection Editor Component
+ *
+ * Defines the complete data contract for rendering and managing a collection.
+ * This interface ensures type safety across server/client boundaries.
  */
 interface CollectionEditorProps {
+  /** Collection metadata and configuration */
   collection: {
-    id: string;
-    title: string;
-    slug: string;
-    description: string | null;
-    previous_slugs: string[];
-    is_public: boolean;
-    created_at: string;
-    updated_at: string;
-    cover_image_url: string | null;
-    theme: Record<string, unknown> | null;
+    id: string;                    // Unique identifier
+    title: string;                 // Display title
+    slug: string;                  // URL-friendly identifier
+    description: string | null;    // Optional description text
+    previous_slugs: string[];      // Historical slugs for redirects
+    is_public: boolean;           // Public visibility flag
+    created_at: string;           // ISO timestamp
+    updated_at: string;           // ISO timestamp
+    cover_image_url: string | null; // Custom cover image URL
+    theme: Record<string, unknown> | null; // Theme configuration object
   };
+
+  /** Current user profile with permissions */
   profile: Profile;
+
+  /** Collection items with full movie data */
   items: CollectionItemWithMovie[];
+
+  /** Collaborator information for Pro users */
   collaborators: CollaboratorSummary[];
-  isOwner: boolean;
-  viewerIsCollaborator: boolean;
+
+  /** Permission flags */
+  isOwner: boolean;              // Whether current user owns the collection
+  viewerIsCollaborator: boolean; // Whether current user is a collaborator
 }
 
 interface CollaboratorSummary {
@@ -211,7 +340,25 @@ interface CollaboratorsPanelProps {
 }
 
 /**
- * Full-featured editor for managing a collection's metadata and item order.
+ * Collection Editor Main Component
+ *
+ * The primary editing interface for movie collections, handling complex interactions
+ * between drag-and-drop reordering, metadata editing, and collaborative features.
+ *
+ * Key State Management:
+ * - Items array for drag-and-drop reordering with optimistic updates
+ * - Form state for metadata editing (title, description, visibility)
+ * - Modal states for search, appearance, and note editing
+ * - Loading states for async operations
+ * - Theme and cover image state with Plus/Pro restrictions
+ *
+ * Drag-and-Drop Architecture:
+ * - Uses @dnd-kit for robust touch and keyboard accessibility
+ * - Pointer sensor with activation distance to prevent accidental drags
+ * - Maintains original order reference for error recovery
+ * - Optimistic UI with server synchronization
+ *
+ * @param props - Complete collection data and user permissions
  */
 export function CollectionEditor({
   collection,
@@ -223,15 +370,31 @@ export function CollectionEditor({
 }: CollectionEditorProps) {
   const router = useRouter();
   const { toast } = useToast();
+
+  /**
+   * Drag-and-Drop Sensor Configuration
+   *
+   * Configures touch and pointer sensors for drag operations.
+   * The activation constraint prevents accidental reordering when clicking buttons
+   * within draggable cards by requiring an 8px drag distance.
+   */
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      // Require a slight drag distance before activation to avoid accidental
-      // reorder gestures while clicking controls inside a card.
-      activationConstraint: { distance: 8 },
+      activationConstraint: { distance: 8 }, // Prevent accidental drags on button clicks
     })
   );
+
+  // Core state for collection items and drag operations
   const [items, setItems] = useState(() => initialItems);
   const [, setActiveId] = useState<string | null>(null);
+
+  /**
+   * Drag Origin Reference
+   *
+   * Maintains a snapshot of the original item order for error recovery.
+   * Updated after successful server synchronization to reflect the new "original" state.
+   * Used to rollback optimistic UI updates when server actions fail.
+   */
   const dragOriginItemsRef = useRef<CollectionItemWithMovie[]>(initialItems);
   const [isSearchOpen, setSearchOpen] = useState(false);
   const [isAppearanceOpen, setAppearanceOpen] = useState(false);
@@ -298,52 +461,100 @@ export function CollectionEditor({
     [collection.id, collection.title, router, startTransition, toast]
   );
 
+  /**
+   * Drag Start Handler
+   *
+   * Captures the initial state when a drag operation begins.
+   * Creates a deep copy of current items for potential rollback on errors.
+   * Updates the active drag state for UI feedback.
+   */
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    // Snapshot current state for error recovery
     dragOriginItemsRef.current = items.map((item) => ({ ...item }));
     setActiveId(event.active.id as string);
   }, [items]);
 
+  /**
+   * Drag Cancel Handler
+   *
+   * Reverts any optimistic UI changes when a drag is cancelled.
+   * Restores the original item order from the snapshot.
+   */
   const handleDragCancel = useCallback(() => {
     setActiveId(null);
+    // Restore original order on drag cancellation
     setItems(dragOriginItemsRef.current.map((item) => ({ ...item })));
   }, []);
 
+  /**
+   * Drag End Handler
+   *
+   * Processes completed drag operations with optimistic UI updates and server synchronization.
+   * Implements a robust error recovery mechanism that maintains UI consistency.
+   *
+   * Algorithm:
+   * 1. Validate drag operation (must have valid source and target)
+   * 2. Calculate new positions using arrayMove utility
+   * 3. Apply optimistic UI update immediately
+   * 4. Persist changes to server with error handling
+   * 5. Rollback UI state if server operation fails
+   *
+   * @param event - DnD Kit drag end event with active/over item information
+   */
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
       setActiveId(null);
+
+      // Validate drag operation - must have target and different positions
       if (!over || active.id === over.id) return;
 
       const currentItems = items;
       const oldIndex = currentItems.findIndex((item) => item.id === active.id);
       const newIndex = currentItems.findIndex((item) => item.id === over.id);
+
+      // Ensure both items exist in the array
       if (oldIndex === -1 || newIndex === -1) {
         return;
       }
 
+      // Create snapshot for error recovery
       const originSnapshot = dragOriginItemsRef.current.map((item) => ({ ...item }));
+
+      // Calculate new order with updated positions
       const reordered = arrayMove(currentItems, oldIndex, newIndex).map((item, index) => ({
         ...item,
-        position: index,
+        position: index, // Update position field for server sync
       }));
 
+      // Apply optimistic update immediately for responsive UX
       setItems(reordered);
 
-      // Persist the new ordering via server action, reverting the UI if the
-      // mutation fails. Using `startTransition` keeps the UI responsive during
-      // the async round-trip.
+      /**
+       * Server Synchronization with Error Recovery
+       *
+       * Persists the reordering to the database while maintaining UI responsiveness.
+       * Uses React transitions to keep the interface interactive during the async operation.
+       * Implements complete error recovery by reverting to the original state on failure.
+       */
       startTransition(async () => {
         try {
+          // Send reordered item IDs with new positions to server
           await reorderCollectionItemsAction({
             collectionId: collection.id,
             orderedIds: reordered.map((item) => ({ id: item.id, position: item.position })),
           });
+
+          // Update recovery snapshot on successful persistence
           dragOriginItemsRef.current = reordered.map((item) => ({ ...item }));
           setError(null);
         } catch (err) {
+          // Handle server errors with user feedback and UI rollback
           const message = err instanceof Error ? err.message : "Failed to reorder";
           setError(message);
           toast({ title: "Unable to reorder", description: message, variant: "error" });
+
+          // Rollback optimistic changes
           setItems(originSnapshot);
           dragOriginItemsRef.current = originSnapshot.map((item) => ({ ...item }));
         }
@@ -1065,7 +1276,38 @@ interface SortableMovieCardProps {
 }
 
 /**
- * Sortable wrapper that wires a movie card into the DnD context.
+ * CollaboratorsPanel Component
+ *
+ * Pro feature panel for managing collaborative collection editing.
+ * Allows collection owners to invite collaborators and manage access permissions.
+ *
+ * Features:
+ * - Invite collaborators by username or email
+ * - Display collaborator list with roles and avatars
+ * - Remove collaborators (owners and self-removal)
+ * - Plan gating for Pro-only feature
+ * - Optimistic UI updates with error recovery
+ *
+ * State Management:
+ * - Local state for invite form and pending operations
+ * - Memoized collaborator entries to prevent unnecessary re-renders
+ * - Transition-based loading states for smooth UX
+ *
+ * Security:
+ * - Permission checks for management actions
+ * - Self-removal handling with navigation
+ * - Role-based access control
+ *
+ * @param collaborators - Array of current collaborators
+ * @param owner - Collection owner information
+ * @param collectionId - Collection identifier for API calls
+ * @param canManage - Whether current user can manage collaborators
+ * @param isOwner - Whether current user is the collection owner
+ * @param viewerId - Current user's ID for self-removal logic
+ * @param viewerPlan - Current user's plan for feature gating
+ * @param viewerIsCollaborator - Whether current user is a collaborator
+ * @param toast - Toast notification function
+ * @param router - Next.js router for navigation
  */
 const CollaboratorsPanel = memo(function CollaboratorsPanel({
   collaborators,
@@ -1079,8 +1321,11 @@ const CollaboratorsPanel = memo(function CollaboratorsPanel({
   toast,
   router,
 }: CollaboratorsPanelProps) {
+  // Invite form state
   const [inviteValue, setInviteValue] = useState("");
   const [invitePending, startInviteTransition] = useTransition();
+
+  // Removal operation state
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const entries = useMemo(() => {

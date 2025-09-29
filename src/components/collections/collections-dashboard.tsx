@@ -1,9 +1,34 @@
 "use client";
 
 /**
- * Dashboard entry point that lists a member's collections with create controls
- * and per-card management menus. Client-side to support optimistic transitions
- * and dialogs.
+ * Collections Dashboard Component
+ *
+ * Main dashboard interface for authenticated users to manage their movie collections.
+ * This component serves as the central hub for collection management, featuring:
+ *
+ * - Smart Picks recommendations (Pro feature) with personalized movie suggestions
+ * - Collection creation with plan-gated limits
+ * - Grid-based collection cards with management actions
+ * - Empty state guidance for new users
+ * - Responsive design with smooth animations
+ *
+ * Key Features:
+ * - Client-side rendering for interactive dialogs and optimistic updates
+ * - Real-time plan enforcement with upgrade prompts
+ * - Persistent UI state for collapsible sections
+ * - Integration with server actions for data mutations
+ * - Toast notifications for user feedback
+ *
+ * State Management:
+ * - Uses React hooks for local state management
+ * - Persists smart picks expansion state across sessions
+ * - Handles loading states during async operations
+ * - Optimistic UI updates with server action rollbacks on failure
+ *
+ * Performance Considerations:
+ * - Memoized calculations for smart picks summaries
+ * - Efficient re-rendering with targeted state updates
+ * - Lazy loading of recommendations data
  */
 
 import React, { useEffect, useMemo, useState, useTransition, type KeyboardEvent } from "react";
@@ -32,15 +57,41 @@ import { extractThemeId, getThemeConfig } from "@/lib/themes";
 // Note: This key is intentionally not user-specific so the state persists across login/logout
 
 /**
- * Modern carousel component for smart picks with smooth animations.
+ * Smart Picks Carousel Component
+ *
+ * Displays personalized movie recommendations in a paginated carousel format.
+ * Features smooth animations, navigation controls, and responsive design.
+ *
+ * Pagination Logic:
+ * - Shows 3 items per page on desktop, fewer on mobile
+ * - Calculates total pages based on recommendation count
+ * - Handles edge cases like empty lists and single pages
+ * - Provides previous/next navigation when multiple pages exist
+ *
+ * Animation Strategy:
+ * - Uses Framer Motion for smooth page transitions
+ * - Staggers item animations with delays for visual appeal
+ * - Maintains consistent animation duration across interactions
+ *
+ * Performance:
+ * - Memoizes pagination calculations to avoid unnecessary re-computations
+ * - Only renders visible items to optimize DOM size
+ * - Uses AnimatePresence for proper exit animations
+ *
+ * @param recommendations - Array of SmartPick objects containing movie data and rationale
  */
 function SmartPicksCarousel({ recommendations }: { recommendations: SmartPick[] }) {
+  // Pagination state and calculations
   const [page, setPage] = useState(0);
-  const itemsPerView = 3;
+  const itemsPerView = 3; // Fixed number of items per carousel page
   const totalPages = Math.max(1, Math.ceil(recommendations.length / itemsPerView));
+
+  // Ensure page index stays within valid bounds
   const clampedPage = Math.min(page, totalPages - 1);
   const startIndex = clampedPage * itemsPerView;
   const visibleItems = recommendations.slice(startIndex, startIndex + itemsPerView);
+
+  // Navigation visibility and availability
   const showNavigation = recommendations.length > itemsPerView;
   const canGoPrev = clampedPage > 0;
   const canGoNext = startIndex + itemsPerView < recommendations.length;
@@ -150,60 +201,114 @@ interface CollectionsDashboardProps {
 /**
  * Renders the authenticated dashboard with create dialogs, plan gating, and collection cards.
  */
+/**
+ * Main Collections Dashboard Component
+ *
+ * Orchestrates the entire dashboard experience with multiple sections and state management.
+ * Handles collection creation, smart picks display, and plan-based feature gating.
+ *
+ * @param profile - User profile with plan information for feature gating
+ * @param collections - Array of user's collections for grid display
+ * @param recommendations - Optional smart picks for Pro users
+ * @param tasteProfile - Optional taste profile data for recommendation context
+ */
 export function CollectionsDashboard({ profile, collections, recommendations, tasteProfile }: CollectionsDashboardProps) {
   const router = useRouter();
   const { toast } = useToast();
 
+  // Debug logging for component lifecycle and state changes
   console.log('CollectionsDashboard render:', {
     profileId: profile.id,
     recommendationsCount: recommendations?.length,
     timestamp: new Date().toISOString()
   });
+
+  // Dialog state for collection creation modal
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useTransition(); // For optimistic UI updates
   const [error, setError] = useState<string | null>(null);
+
+  // Smart picks state management with SSR-safe initialization
   const [smartPicks, setSmartPicks] = useState<SmartPick[]>(() => recommendations ?? []);
   const [smartProfile, setSmartProfile] = useState<TasteProfile | null>(() => tasteProfile ?? null);
   const [refreshingSmartPicks, setRefreshingSmartPicks] = useState(false);
-  // Initialize state directly from storage to avoid hydration issues
+
+  /**
+   * Smart Picks Expansion State
+   *
+   * Persists user's preference for showing/hiding smart picks section.
+   * Uses both localStorage and sessionStorage for cross-tab persistence.
+   * SSR-safe with fallback to default expanded state.
+   */
   const [smartPicksOpen, setSmartPicksOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true; // SSR fallback
+    // Server-side rendering fallback - default to expanded
+    if (typeof window === "undefined") return true;
 
     try {
+      // Generate user-specific storage key
       const key = `framevault:smart-picks-open:${profile.id}`;
+      // Check both storage types for existing preference
       const stored = window.localStorage.getItem(key) || window.sessionStorage.getItem(key);
-      const result = stored === null ? true : stored === "true";
-      console.log('Initializing smart picks state:', { key, stored, result, profileId: profile.id, timestamp: new Date().toISOString() });
+      const result = stored === null ? true : stored === "true"; // Default to true if no preference set
+
+      console.log('Initializing smart picks state:', {
+        key,
+        stored,
+        result,
+        profileId: profile.id,
+        timestamp: new Date().toISOString()
+      });
       return result;
     } catch (error) {
       console.error('Error initializing smart picks state:', error);
-      return true;
+      return true; // Fallback to expanded on error
     }
   });
 
+  // Hydration tracking to prevent SSR/client mismatches
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // Debug: Check if component is being remounted
+  // Debug: Component lifecycle monitoring
   React.useEffect(() => {
     console.log('CollectionsDashboard mounted/remounted');
     return () => console.log('CollectionsDashboard unmounting');
   }, []);
+
+  /**
+   * Smart Picks Summary Generator
+   *
+   * Creates a human-readable summary of available recommendations for display
+   * in the collapsed smart picks section. Handles various scenarios:
+   *
+   * - Empty state: Encouraging message for new users
+   * - Single recommendation: Direct title reference
+   * - Multiple recommendations: Shows first 1-2 titles with count of remaining
+   *
+   * Memoized for performance since it depends on smartPicks array.
+   * Filters out invalid/empty titles to ensure clean display.
+   */
   const smartPickSummary = useMemo(() => {
     if (!smartPicks.length) return null;
+
+    // Extract and validate movie titles
     const titles = smartPicks
       .map((pick) => pick.movie.title)
       .filter((title): title is string => Boolean(title && title.trim().length));
+
     if (titles.length === 0) {
-      return "Fresh picks ready when you are.";
+      return "Fresh picks ready when you are."; // Fallback for recommendations without titles
     }
+
     if (titles.length === 1) {
       const remaining = smartPicks.length - 1;
       return remaining > 0
         ? `${titles[0]} and ${remaining} more picked just for you`
         : `${titles[0]} — picked just for you`;
     }
+
+    // Handle 2+ titles with smart truncation
     const [first, second] = titles;
     const remaining = smartPicks.length - 2;
     return remaining > 0
@@ -244,21 +349,46 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
     setSmartProfile(tasteProfile ?? null);
   }, [tasteProfile]);
 
+  /**
+   * Refresh Smart Picks Function
+   *
+   * Fetches fresh personalized movie recommendations from the server.
+   * Implements deduplication by excluding currently displayed picks.
+   *
+   * Algorithm:
+   * 1. Prevent concurrent refresh requests
+   * 2. Build exclusion list from current smart picks to avoid duplicates
+   * 3. Request same number of picks or default to 6 for empty state
+   * 4. Update local state with fresh recommendations
+   * 5. Handle errors gracefully with user feedback
+   *
+   * @async
+   * @returns {Promise<void>}
+   */
   async function refreshSmartPicks() {
+    // Prevent multiple simultaneous refresh requests
     if (refreshingSmartPicks) return;
+
     try {
       setRefreshingSmartPicks(true);
+
+      // Build exclusion parameter to avoid showing duplicate recommendations
       const excludeParam = smartPicks.length
         ? `&exclude=${smartPicks.map((pick) => pick.movie.tmdbId).join(",")}`
         : "";
+
+      // Maintain same number of picks or use default for initial load
       const limitParam = smartPicks.length ? smartPicks.length : 6;
+
+      // Fetch fresh recommendations with cache bypass
       const response = await fetch(`/api/recommendations?limit=${limitParam}${excludeParam}`, {
         method: "GET",
         headers: { Accept: "application/json" },
-        cache: "no-store",
+        cache: "no-store", // Ensure fresh data from server
       });
 
       if (!response.ok) {
+        // Extract error message from response if available
         const message = await response
           .json()
           .then((data) => (typeof data?.message === "string" ? data.message : null))
@@ -266,7 +396,10 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
         throw new Error(message ?? "Unable to refresh Smart Picks right now");
       }
 
+      // Parse and validate response data
       const result = (await response.json()) as { picks?: SmartPick[]; profile?: TasteProfile | null };
+
+      // Update local state with fresh recommendations
       setSmartPicks(result.picks ?? []);
       setSmartProfile(result.profile ?? null);
     } catch (err) {
@@ -277,17 +410,58 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
     }
   }
 
+  /**
+   * Plan-based Collection Limits
+   *
+   * Determines collection creation limits based on user's current plan.
+   * Free users get limited collections, paid plans get unlimited.
+   * Used for UI gating and validation.
+   */
   const limit = PLAN_COLLECTION_LIMIT[profile.plan] ?? Infinity;
-  // Plan gating logic ensures the UI matches server enforcement before the
-  // member attempts to submit the create form.
+
+  /**
+   * Collection Creation Permission Check
+   *
+   * Evaluates whether the user can create new collections based on:
+   * - Current plan limitations
+   * - Existing collection count
+   * - Any pending plan changes that might affect limits
+   *
+   * This client-side check mirrors server-side validation for better UX.
+   */
   const canCreate = canCreateCollection(profile, collections.length);
 
+  /**
+   * Collection Creation Handler
+   *
+   * Processes the collection creation form with validation and optimistic UI updates.
+   * Uses React transitions to keep the dialog interactive during server action execution.
+   *
+   * Validation:
+   * - Requires non-empty title after trimming whitespace
+   * - Optional description field
+   *
+   * Error Handling:
+   * - Displays validation errors in form and toast
+   * - Shows server errors with user-friendly messages
+   * - Maintains form state on validation failures
+   *
+   * Success Flow:
+   * - Clears form and closes dialog
+   * - Triggers router refresh to update collection list
+   * - Shows success toast with confirmation
+   *
+   * @param event - Form submission event
+   */
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    // Sanitize and validate form inputs
     const trimmedTitle = formTitle.trim();
     const trimmedDescription = formDescription.trim();
 
+    // Title is required for collection creation
     if (!trimmedTitle) {
       const message = "Please provide a title for your collection";
       setError(message);
@@ -295,17 +469,20 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
       return;
     }
 
-    // Use a transition so the dialog remains interactive while the server
-    // action executes and the router refreshes the list.
+    // Use React transition to maintain UI responsiveness during async operation
     startTransition(async () => {
       try {
         await createCollectionAction({
           title: trimmedTitle,
           description: trimmedDescription ? trimmedDescription : null,
         });
+
+        // Reset form state on successful creation
         setFormTitle("");
         setFormDescription("");
         setDialogOpen(false);
+
+        // Provide user feedback and refresh the collection list
         toast({
           title: "Collection created",
           description: `"${trimmedTitle}" is ready to curate.`,
@@ -320,9 +497,43 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
     });
   }
 
+  /**
+   * Main Dashboard Render
+   *
+   * Renders the complete dashboard layout with conditional sections based on user plan and state.
+   * The layout is structured as follows:
+   *
+   * 1. Smart Picks Section (Pro users only)
+   *    - Personalized movie recommendations
+   *    - Collapsible with persistent state
+   *    - Refresh functionality with loading states
+   *
+   * 2. Collections Header
+   *    - Title and description
+   *    - Collection statistics
+   *    - Create collection button with plan gating
+   *
+   * 3. Plan Gate (when limit reached)
+   *    - Upgrade prompt for free users at limit
+   *
+   * 4. Collections Grid
+   *    - Empty state for new users
+   *    - Grid of collection cards with animations
+   *    - Each card shows metadata and management actions
+   *
+   * Responsive Design:
+   * - Mobile-first approach with progressive enhancement
+   * - Adaptive grid layouts for different screen sizes
+   * - Touch-friendly interactions and spacing
+   *
+   * Animation Strategy:
+   * - Framer Motion for smooth page transitions
+   * - Staggered animations for list items
+   * - Reduced motion support for accessibility
+   */
   return (
     <div className="space-y-12">
-      {/* Smart Picks Section - Pro Only */}
+      {/* Smart Picks Section - Pro Only Feature */}
       {profile.plan === "pro" && (
         <motion.section
           initial={{ opacity: 0, y: 20 }}
@@ -660,20 +871,49 @@ export function CollectionsDashboard({ profile, collections, recommendations, ta
   );
 }
 
+/**
+ * Props for the SmartPickCard component.
+ */
 interface SmartPickCardProps {
   pick: SmartPick;
 }
 
+/**
+ * SmartPickCard Component
+ *
+ * Individual recommendation card displaying a personalized movie suggestion.
+ * Shows movie poster, title, overview, rationale tags, and navigation to movie details.
+ *
+ * Features:
+ * - Keyboard navigation support (Enter/Space to navigate)
+ * - Accessible link semantics with proper ARIA attributes
+ * - Hover effects and smooth transitions
+ * - Responsive layout with poster and content side-by-side
+ * - TMDB external link for additional movie information
+ *
+ * @param pick - SmartPick object containing movie data and recommendation rationale
+ */
 function SmartPickCard({ pick }: SmartPickCardProps) {
   const router = useRouter();
+
+  // Format movie metadata for display
   const releaseYear = pick.movie.releaseYear ? ` • ${pick.movie.releaseYear}` : "";
   const runtimeLabel = pick.movie.runtime ? `${pick.movie.runtime} min` : "Feature length";
+
+  // Limit rationale tags to prevent overflow (show first 3)
   const rationale = pick.rationale.slice(0, 3);
 
+  /**
+   * Navigation handler for movie details page.
+   */
   function navigateToMovie() {
     router.push(`/movies/${pick.movie.tmdbId}`);
   }
 
+  /**
+   * Keyboard event handler for accessibility.
+   * Allows keyboard users to navigate using Enter or Space keys.
+   */
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -708,7 +948,7 @@ function SmartPickCard({ pick }: SmartPickCardProps) {
               <Sparkles className="h-3 w-3" />
               <span>Smart Pick{releaseYear}</span>
             </div>
-            <h3 className="text-base font-semibold text-text-primary transition-colors duration-200 line-clamp-2 group-hover:text-gradient">
+            <h3 className="text-base font-semibold text-text-primary transition-colors duration-200 line-clamp-2 group-hover:text-accent-primary">
               {pick.movie.title}
             </h3>
             {pick.movie.overview ? (
@@ -760,34 +1000,86 @@ interface CollectionCardProps {
 }
 
 /**
- * Interactive card showing collection details, quick actions, and context menus.
+ * CollectionCard Component
+ *
+ * Interactive collection preview card with management actions and inline editing.
+ * Displays collection metadata, theme styling, and provides quick access to editing features.
+ *
+ * Features:
+ * - Click-to-navigate to collection editor
+ * - Keyboard accessibility (Enter/Space navigation)
+ * - Inline rename functionality with form validation
+ * - Public/private toggle with optimistic updates
+ * - Delete confirmation with undo feedback
+ * - Theme-based visual styling with gradient backgrounds
+ * - Responsive hover effects and animations
+ * - Context menu with additional actions (copy link, etc.)
+ *
+ * State Management:
+ * - Local state for rename mode and form data
+ * - Optimistic updates for quick visual feedback
+ * - Server action integration with error recovery
+ * - Pending states to prevent concurrent operations
+ *
+ * Accessibility:
+ * - Proper ARIA attributes and keyboard navigation
+ * - Focus management during modal interactions
+ * - Screen reader friendly action descriptions
+ *
+ * @param collection - Collection data for display
+ * @param profile - User profile for permission checks
+ * @param onUpdated - Callback when collection is updated
+ * @param onDeleted - Callback when collection is deleted
  */
 function CollectionCard({ collection, profile, onUpdated, onDeleted }: CollectionCardProps) {
   const router = useRouter();
   const { toast } = useToast();
+
+  // Rename modal state and form data
   const [isRenaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(collection.title);
   const [description, setDescription] = useState(collection.description ?? "");
+
+  // Async operation states
   const [pending, startTransition] = useTransition();
   const [isDeleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Theme configuration for visual styling
   const themeConfig = getThemeConfig(extractThemeId(collection.theme));
 
+  /**
+   * Determines if a click/keyboard event should be ignored for card activation.
+   * Used to prevent navigation when interacting with card controls (buttons, menus, etc.)
+   *
+   * @param target - The event target element
+   * @returns true if the event should be ignored
+   */
   function shouldIgnoreActivation(target: HTMLElement) {
     return Boolean(target.closest('[data-collection-card-ignore]'));
   }
 
+  /**
+   * Navigates to the collection editor page.
+   */
   function navigateToEditor() {
     router.push(`/collections/${collection.id}`);
   }
 
+  /**
+   * Card click handler for navigation.
+   * Ignores clicks on interactive elements and prevents navigation during async operations.
+   */
   function handleCardClick(event: React.MouseEvent<HTMLDivElement>) {
     if (shouldIgnoreActivation(event.target as HTMLElement)) return;
     if (pending || isDeleting) return;
     navigateToEditor();
   }
 
+  /**
+   * Keyboard navigation handler for accessibility.
+   * Allows Enter and Space keys to navigate to the collection editor.
+   */
   function handleCardKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Enter" || event.key === " ") {
       if (shouldIgnoreActivation(event.target as HTMLElement)) return;

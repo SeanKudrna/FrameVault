@@ -130,7 +130,7 @@ export function SignInForm() {
           <button
             type="button"
             onClick={() => setMode("sign-up")}
-            className="text-indigo-300 hover:text-indigo-200"
+            className="text-indigo-300 hover:text-indigo-200 cursor-pointer"
           >
             Need an account? Sign up instead.
           </button>
@@ -138,7 +138,7 @@ export function SignInForm() {
           <button
             type="button"
             onClick={() => setMode("sign-in")}
-            className="text-indigo-300 hover:text-indigo-200"
+            className="text-indigo-300 hover:text-indigo-200 cursor-pointer"
           >
             Already joined? Sign in.
           </button>
