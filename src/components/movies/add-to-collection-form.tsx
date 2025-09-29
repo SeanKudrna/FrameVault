@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { addMovieToCollectionAction } from "@/app/(app)/collections/actions";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/providers/toast-provider";
 import type { MovieSummary } from "@/lib/tmdb";
 
@@ -21,6 +22,11 @@ export function AddToCollectionForm({ collections, movie }: AddToCollectionFormP
   const { toast } = useToast();
   const [selectedCollection, setSelectedCollection] = useState(collections[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
+
+  const selectOptions = collections.map(collection => ({
+    value: collection.id,
+    label: collection.title,
+  }));
 
   if (collections.length === 0) {
     return (
@@ -77,21 +83,15 @@ export function AddToCollectionForm({ collections, movie }: AddToCollectionFormP
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-semibold uppercase tracking-[0.22em] text-text-tertiary" htmlFor="collection-select">
+        <label className="text-xs font-semibold uppercase tracking-[0.22em] text-text-tertiary">
           Choose collection
         </label>
-        <select
-          id="collection-select"
+        <Select
           value={selectedCollection}
-          onChange={(event) => setSelectedCollection(event.target.value)}
-          className="w-full rounded-xl border border-border-secondary bg-surface-secondary/60 px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
-        >
-          {collections.map((collection) => (
-            <option key={collection.id} value={collection.id}>
-              {collection.title}
-            </option>
-          ))}
-        </select>
+          onValueChange={setSelectedCollection}
+          options={selectOptions}
+          placeholder="Choose a collection"
+        />
       </div>
 
       <Button type="submit" className="w-full" disabled={pending}>

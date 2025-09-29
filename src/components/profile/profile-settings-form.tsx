@@ -8,6 +8,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useSupabase } from "@/components/providers/supabase-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import type { Profile } from "@/lib/supabase/types";
@@ -36,6 +37,11 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const regionOptions = REGIONS.map(region => ({
+    value: region.code,
+    label: region.label,
+  }));
 
   useEffect(() => {
     if (!message) return;
@@ -104,21 +110,15 @@ export function ProfileSettingsForm({ profile }: { profile: Profile }) {
         <p className="text-xs text-slate-500">Public pages will live at framevault.app/c/{username}</p>
       </div>
       <div className="space-y-2">
-        <label className="text-xs uppercase tracking-[0.24em] text-slate-500" htmlFor="region">
+        <label className="text-xs uppercase tracking-[0.24em] text-slate-500">
           Streaming region
         </label>
-        <select
-          id="region"
+        <Select
           value={region}
-          onChange={(event) => setRegion(event.target.value)}
-          className="h-11 w-full rounded-xl border border-slate-800/70 bg-slate-950/70 px-3 text-sm text-slate-100"
-        >
-          {REGIONS.map((entry) => (
-            <option key={entry.code} value={entry.code}>
-              {entry.label}
-            </option>
-          ))}
-        </select>
+          onValueChange={setRegion}
+          options={regionOptions}
+          placeholder="Select region"
+        />
         <p className="text-xs text-slate-500">We’ll use this region to prioritise streaming availability suggestions.</p>
       </div>
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}
